@@ -64,9 +64,9 @@ class ChannelSelector():
         self.alpha_sequence = ...
 
 
-    def flatten_conv_layers(self, model: nn.Module) -> list:
-        flattened_layers = [module for module in model.modules() if isinstance(module, nn.Conv2d)]
-        return flattened_layers
+    #def flatten_conv_layers(self, model: nn.Module) -> list:
+    #    flattened_layers = [module for module in model.modules() if isinstance(module, nn.Conv2d)]
+    #    return flattened_layers
 
 
     def select_indices(self, model: nn.Module) -> dict:
