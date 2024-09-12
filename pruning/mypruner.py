@@ -2,6 +2,21 @@ import torch.nn as nn
 import torch_pruning as tp
 import torch
 import gc
+import numpy as np
+
+def prune_layer(model):
+     pass
+
+
+
+
+
+
+
+
+
+
+
 
 class ModelPruner():
     def __init__(self) -> None:
@@ -69,7 +84,7 @@ class ChannelSelector():
     #    return flattened_layers
 
 
-    def select_indices(self, model: nn.Module) -> dict:
+    def select_indices(self, layer) -> dict:
        
         flattened_layers = self.flatten_layers(model)
         indices = {}
@@ -85,22 +100,101 @@ class ChannelSelector():
         return indices
 
 
+import numpy as np
+
+def choose_alpha(alpha_sequence, i, alpha_pdf, conf, df_allsamples, n_possible_alphas):
+    
+    def _apply_skip_rules(conf):
+        alpha = 1.0
+        skipunder = getattr(conf.skiprule, "skipunder", None)
+        skipmod = getattr(conf.skiprule, "skipmod", None)
+
+        if (skipunder is not None) and (i < skipunder):
+            alpha = 0.0
+        elif (skipmod is not None) and (i % skipmod):
+            alpha = 0.0
+
+        return alpha
+
+    is_existing_sample = True
+    temp_alpha_sequence = alpha_sequence.copy()  # Avoid modifying original sequence directly
+    tried_alphas = []
+    is_existing_alpha_seq = True  # Initialize the loop control variable
+
+    while is_existing_alpha_seq:
+        alpha = _apply_skip_rules(conf)
+        if alpha != 0.0:
+            alpha = np.random()  # Random value if not skipped
+
+        if alpha not in tried_alphas:
+            tried_alphas.append(alpha)
+            temp_alpha_sequence[i] = alpha  # Modify only the current index of the sequence
+            is_existing_sample = (df_allsamples == temp_alpha_sequence).all(axis=1).any()  # Check if the sequence already exists
+            alpha_sequence = temp_alpha_sequence  # Update the main sequence
+
+        if len(tried_alphas) == n_possible_alphas:  # End loop when all alphas have been tried
+            is_existing_alpha_seq = False
+
+    return alpha, is_existing_sample
+
+
+
+
 if __name__ == "__main__":
+
+    conf = ...
      
     model = ...
+    # Evaluate model model.evaluate
+    # Save results
+    # Get the number of prunable layers
     flattened_conv_layers = ...
     ignored_layers = ...
-    alpha_sequence = ... #full 0
 
-    for i, layer in enumerate(flattened_conv_layers):
-        if i not in ignored_layers:
-            alpha = random()
-            alpha_sequence[i] = alpha   
+    n_prunable_layers = len(flattened_conv_layers) - len(ignored_layers)
+    alpha_pdf = ... # generate_pdf(n_prunable_layers, len(possible_alphas))
 
-            channel_selector = ChannelSelector(model, alpha_sequence)
-            prunabe_output_indices = channel_selector()
-            pruner = ModelPruner(model, prunabe_output_indices)
-            pruned_model = pruner.prune_model
-            del model
-            model = pruned_model
-    
+    # Load the samples df and get the n_samples 
+    df_allsamples = ...
+    n_samples = len(df_allsamples)
+
+    while n_samples < conf.max_samples:
+
+
+        state = torch.full([n_prunable_layers, conf.n_features], -1.0)
+        label = torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
+        alpha_sequence = np.full(n_prunable_layers, -1)                
+
+
+        for i, layer in enumerate(flattened_conv_layers):
+            if i not in ignored_layers:
+
+                model = ... #load model
+                
+                # Check if the alpha_seq exists already
+                alpha_sequence, is_existing_sample = choose_alpha(alpha_sequence, i, alpha_pdf, conf, df_allsamples)
+
+                        
+
+                channel_selector = ChannelSelector()
+                pruner = ModelPruner(model)
+
+                # Eval model before pruning
+                if not is_all_sampled:
+                    metrics_before = pruner.eval_model(model)
+
+                prunabe_output_indices = channel_selector.select_indices(layer, alpha)
+                pruned_model = pruner.prune_model(layer, prunabe_output_indices)
+                metrics_after = pruner.eval_model(pruned_model)
+                
+                finetuned_model = pruner.finetune_model(pruned_model, epochs)
+                
+                if not is_all_sampled: # Don't save if pruning is only performed to create further non-existing states
+                    pruner.save_state(pruned_model)
+                else:
+                    # load the labels and check if the saved lables are the same as metrics_after
+                    # assert if not
+
+
+                del model
+        
