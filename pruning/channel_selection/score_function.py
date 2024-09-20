@@ -18,7 +18,7 @@ class PuRLSelector(BaseSelector):
     def __init__(self, **spec) -> None:
         super().__init__(**spec)
 
-    def select_indices(self, layer: nn.Conv2d, alpha: float) -> list:
+    def select_indices(self, layer: nn.Conv2, alpha: float) -> list:
 
         # Calculate norm for every channel
         norms = (torch.norm(layer.weight.data, 'fro', dim=[2, 3]))

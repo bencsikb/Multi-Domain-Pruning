@@ -9,6 +9,8 @@ import os
 from src.model.model_handler import ModelHandler
 from pruning.channel_selection.channel_selector import ChannelSelector
 from utils.config_parser import ConfigParser
+from types import SimpleNamespace
+from pruning.channel_selection.channel_selector import ChannelSelector
 
 def prune_layer(model):
      pass
@@ -16,63 +18,108 @@ def prune_layer(model):
 
 
 
-
-
-
-
-
-
-
-
-class ModelPruner():
-    def __init__(self) -> None:
+class StepWisePruner():
+    def __init__(self, 
+                 model_handler: ModelHandler, 
+                 init_metrics: dict, 
+                 conf: SimpleNamespace, 
+                 channel_selector: ChannelSelector) -> None:
                 
-        self.model = ...
-        self.all_indices = ... # n x list of prunable channels
-        self.example_inputs = torch.randn(1, 3, 224, 224)
-        self.ignored_layers = ...
-    
-    def check_layer_compatibility(self, model: nn.Module) -> None:
+        self._init_model_handler = model_handler
+        self._model_handler = self._init_model_handler
+        self._init_metrics = init_metrics
+        self.conf = conf
+        self.channel_selector = channel_selector
+
+        self.flattened_conv_layers = self._model_handler.flatten_conv_layers
+        self.ignored_layers = self.conf.model.ignored_layers
+        self.prunable_layers = ... # TODO remove ignored layers from falttened_conv_layers
+        self.n_conv_layers = len(self.flattened_conv_layers)
+        self.n_prunable_layers = len(flattened_conv_layers) - len(ignored_layers)
+
+        self.example_inputs = torch.randn(1, 3, 224, 224) #TODO
+        self.layer_i = 0
+
+        self._all_indices = [None] * self.n_prunable_layers
+        self._state = torch.full([self.n_prunable_layers, conf.n_features], -1.0)
+        self._label = torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
+        self._alpha_sequence = np.full(self.n_prunable_layers, -1)                
+
+
+    def reset_model(self) -> None:
+        """ Resets the model to its original state before applying pruning and imcrements the layer counter.
+        Should be called before pruning each layer.
         """
-        Another idea: all_indices is a dict and the keys are the indices of the prunable layers (in flattened row)
-        Then, ignored layers in not even necessary.
+        del self._model_handler
+        self._model_handler = self._init_model_handler
+        self.layer_i += 1
+
+    
+    def reset_state(self) -> None:
+        """ Resets the state and labels.
+        Should be called before pruning the first layer.
         """
-        flattened_layers = flattened_layers(model)
-        n_conv_layers = len(flattened_layers)
-        n_ignored_layers = len(self.ignored_layers)
-        n_prunable_layers = len(self.all_indices)
+        self._all_indices = [None] * self.n_prunable_layers
+        self._state = torch.full([self.n_prunable_layers, conf.n_features], -1.0)
+        self._label = torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
+        self._alpha_sequence = np.full(self.n_prunable_layers, -1)    
 
-        if n_conv_layers != n_ignored_layers + n_prunable_layers:
-             assert "Layer number mismatch!"
+    def select_indices(self) -> None:
+        """ Select the indices to be removed from the output dimension, based on the given alpha.
+        """
+        idxs = channel_selector.select_indices(self.prunable_layers[self.layer_i], self.alpha_sequence[self.layer_i])
+        self._all_indices[self.layer_i] = idxs
+   
+
+    def prune_model(self) -> None:   
+        """ Prunes the initial model by calling the model_handler's prune function.
+        """
+
+        self._model_handler.prune(self._all_indices)
     
-    def flatten_conv_layers(self, model: nn.Module) -> list:
-        flattened_layers = [module for module in model.modules() if isinstance(module, nn.Conv2d)]
-        return flattened_layers
-    
 
-    def prune_model(self, model: nn.Module) -> None:    
-        DG = tp.DependencyGraph().build_dependency(model, self.example_inputs)
+    def eval_pruned_model(self) -> None:
+        """ Evaluates the model after pruning and updates the metrics after pruning.
+        """
+        # TODO metrics should be reinitialized somewhere
+        self.metrics = self._model_handler.evaluate()
 
-        def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
-                    pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=[0,1,2,3])
-                    pruning_group.prune()
 
-        flattened_layers = self.flatten_layers(model)
+    def update_state_and_label():
+        pass
+        """
+        state[row_cnt, 1] = normalize(parser['in_ch'], 0, 1024)
+        state[row_cnt, 2] = normalize(parser['out_ch'], 0, 1024)
+        state[row_cnt, 3,] = normalize(parser['kernel'], 0, 3)
+        state[row_cnt, 4] = normalize(parser['stride'], 0, 2)
+        state[row_cnt, 5] = normalize(parser['pad'], 0, 1)
+        state[row_cnt, 6] = prev_spars
+        """
 
-        for i, layer in enumerate(flattened_layers):
-            
-            if i in self.ignored_layers:
-                continue
-
-            idxs = self.all_indices[i]        
-
-            prune_conv_layer(layer, idxs)
-            
-            del layer
-            gc.collect()
     
     def fine_tune():
          pass
+
+    def set_alpha(self, alpha):
+        #if self.last_set_alpha + 1 != i:
+        #    assert "TODO"
+        #else:
+        self._alpha_sequence[self.layer_i] = alpha # TODO normalize
+    
+    @property
+    def alpha_sequence(self):
+        return self._alpha_sequence
+
+
+
+
+
+
+class OneShotPruner():
+        def __init__(self) -> None:
+            pass
+
+
 
 
 
@@ -136,7 +183,11 @@ if __name__ == "__main__":
     model_handler.flatten_conv_layers()
     flattened_conv_layers = model_handler.flattened_layers
     ignored_layers = conf.model.ignored_layers  
+    flattened_prunable_layers = ... # TODO
     n_prunable_layers = len(flattened_conv_layers) - len(ignored_layers)
+
+    channel_selector = ChannelSelector(conf.channel_selection)
+    pruner = StepWisePruner(model_handler, metrics, conf, channel_selector)
 
     del model_handler
 
@@ -155,34 +206,24 @@ if __name__ == "__main__":
 
     while sample_cnt < conf.max_samples:
 
-        state = torch.full([n_prunable_layers, conf.n_features], -1.0)
-        label = torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
-        alpha_sequence = np.full(n_prunable_layers, -1)                
+        pruner.reset_state()
 
-
-        for i, layer in enumerate(flattened_conv_layers):
-
-            if i in ignored_layers:
-                continue
+        for i, layer in enumerate(flattened_prunable_layers):
 
             # Load model
-            model_handler = ModelHandler()
-            model_handler.load_pretrained(conf.model.pretrained_type) 
-
+            pruner.reset_model()
             
             # Check if the alpha_seq exists already
-            alpha_sequence, is_existing_sample = choose_alpha(alpha_sequence, i, alpha_pdf, conf, df_allsamples)                        
+            alpha, is_existing_sample = choose_alpha(pruner.alpha_sequence, i, alpha_pdf, conf, df_allsamples)    
 
-            channel_selector = ChannelSelector(conf.channel_selection)
-            pruner = ModelPruner(model_handler.model)
+            pruner.set_alpha(i, alpha)  
+            pruner.select_indices()              
+            pruner.prune_model()
+            pruner.eval_pruned_model()
+            pruner.update_state_and_label()
 
-            # Eval model before pruning
-            # if not is_existing_sample:
-            #    metrics_before = pruner.eval_model(model_handler.model)
-
-            prunabe_output_indices = channel_selector.select_indices(layer, i, alpha_sequence[i])
-            model_handler.prune(pruner, layer, prunabe_output_indices)
-            metrics_after = model_handler.evaluate()
+            pruner.get_state_with_alpha() #TODO
+            pruner.get_label() #TODO
             
             # model_handler.finetune(conf.finetune_epochs)
             

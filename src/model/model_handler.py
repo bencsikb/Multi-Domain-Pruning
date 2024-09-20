@@ -1,4 +1,6 @@
 import torch.nn as nn
+import torch_pruning as tp
+import gc
 
 
 class ModelHandler:
@@ -27,10 +29,26 @@ class ModelHandler:
         pass
         return []
     
-    def prune(self, pruner, layer, indices):
-        pruned_model = pruner.prune_model(layer, indices)
-        self._model = pruned_model
-       
+    def prune(self, all_indices):
+
+        DG = tp.DependencyGraph().build_dependency(self._model, self.example_inputs)
+
+        def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
+                    pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
+                    pruning_group.prune()
+
+        for i, layer in enumerate(self._flattened_layers):
+            
+            if i in self.ignored_layers:
+                continue
+
+            indices = all_indices[i]        
+
+            prune_conv_layer(layer, indices)
+            
+            del layer
+            gc.collect()
+
         
 
     def save_metrics():
