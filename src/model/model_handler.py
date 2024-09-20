@@ -7,7 +7,7 @@ class ModelHandler:
         self._flattened_layers = []
         
     
-    def load_pretrained(self, type) -> None:
+    def load_pretrained(self, type: str) -> None:
         from ultralytics import YOLOv10
 
         if type == "yolov10":
@@ -23,8 +23,15 @@ class ModelHandler:
     def train(self):
         pass
 
-    def validate(self):
+    def evaluate(self) -> list:
         pass
+        return []
+    
+    def prune(self, pruner, layer, indices):
+        pruned_model = pruner.prune_model(layer, indices)
+        self._model = pruned_model
+       
+        
 
     def save_metrics():
         pass

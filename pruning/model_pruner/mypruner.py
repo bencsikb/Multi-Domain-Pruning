@@ -3,9 +3,12 @@ import torch_pruning as tp
 import torch
 import gc
 import numpy as np
+import pandas as pd
+import os
 
 from src.model.model_handler import ModelHandler
-from channel_selection.channel_selector import ChannelSelector
+from pruning.channel_selection.channel_selector import ChannelSelector
+from utils.config_parser import ConfigParser
 
 def prune_layer(model):
      pass
@@ -29,7 +32,7 @@ class ModelPruner():
         self.example_inputs = torch.randn(1, 3, 224, 224)
         self.ignored_layers = ...
     
-    def check_layer_compatibility(self, model: nn.Model) -> None:
+    def check_layer_compatibility(self, model: nn.Module) -> None:
         """
         Another idea: all_indices is a dict and the keys are the indices of the prunable layers (in flattened row)
         Then, ignored layers in not even necessary.
@@ -113,31 +116,44 @@ def choose_alpha(alpha_sequence, i, alpha_pdf, conf, df_allsamples, n_possible_a
 
 if __name__ == "__main__":
 
-    conf = ...
+    conf = ConfigParser.read("config/pruning/pruning_sampling.ini")
     
     # Load model
-    model_handler = ModelHandler
-    model_handler.load_pretrained("yolov10") #TODO type from config file
+    model_handler = ModelHandler()
+    if conf.model.model_path is not None:
+        # TODO load model
+        pass 
+    else:        
+        model_handler.load_pretrained(type = conf.model.pretrained_type) 
+        # TODO hasattr handling
 
     # Evaluate model 
     metrics = model_handler.evaluate()
     # Save results
 
     # Determine prunable layers
+    # TODO load model and check of metrics are same as in the generated config file
     model_handler.flatten_conv_layers()
     flattened_conv_layers = model_handler.flattened_layers
-    ignored_layers = [] #TODO   
+    ignored_layers = conf.model.ignored_layers  
     n_prunable_layers = len(flattened_conv_layers) - len(ignored_layers)
+
+    del model_handler
 
     # Get alpha PDF
     alpha_pdf = ... # generate_pdf(n_prunable_layers, len(possible_alphas))
 
     # Load the samples df and get the n_samples 
-    df_allsamples = ...
-    n_samples = len(df_allsamples)
+    samples_path = os.path.join(conf.samples.save_path, "allsamples.pkl")
+    if os.path.exist(samples_path):
+        df_allsamples = pd.read_pkl(samples_path)
+        sample_cnt = len(df_allsamples)
+    else: 
+        df_allsamples = pd.DataFrame(columns=[]) # TODO
+        sample_cnt = 0
 
-    while n_samples < conf.max_samples:
 
+    while sample_cnt < conf.max_samples:
 
         state = torch.full([n_prunable_layers, conf.n_features], -1.0)
         label = torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
@@ -145,36 +161,39 @@ if __name__ == "__main__":
 
 
         for i, layer in enumerate(flattened_conv_layers):
-            if i not in ignored_layers:
 
-                # Load model
-                model_handler = ModelHandler
-                model_handler.load_pretrained("yolov10") #TODO type from config file
-                
-                # Check if the alpha_seq exists already
-                alpha_sequence, is_existing_sample = choose_alpha(alpha_sequence, i, alpha_pdf, conf, df_allsamples)                        
+            if i in ignored_layers:
+                continue
 
-                channel_selector = ChannelSelector(conf.channel_selection)
-                pruner = ModelPruner(model_handler.model)
+            # Load model
+            model_handler = ModelHandler()
+            model_handler.load_pretrained(conf.model.pretrained_type) 
 
-                # Eval model before pruning
-                if not is_existing_sample:
-                    metrics_before = pruner.eval_model(model_handler.model)
+            
+            # Check if the alpha_seq exists already
+            alpha_sequence, is_existing_sample = choose_alpha(alpha_sequence, i, alpha_pdf, conf, df_allsamples)                        
 
-                prunabe_output_indices = channel_selector.select_indices(layer, i, alpha_sequence[i])
-                pruned_model = pruner.prune_model(layer, prunabe_output_indices)
-                # TODO set pruned model to model handler
-                model_handler(pruned_model)
-                metrics_after = pruner.eval_model(pruned_model)
-                
-                finetuned_model = pruner.finetune_model(pruned_model, conf.finetune_epochs)
-                
-                if not is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
-                    pruner.save_state(pruned_model)
-                else:
-                    # load the labels and check if the saved lables are the same as metrics_after
-                    # assert if not
-                    pass
+            channel_selector = ChannelSelector(conf.channel_selection)
+            pruner = ModelPruner(model_handler.model)
+
+            # Eval model before pruning
+            # if not is_existing_sample:
+            #    metrics_before = pruner.eval_model(model_handler.model)
+
+            prunabe_output_indices = channel_selector.select_indices(layer, i, alpha_sequence[i])
+            model_handler.prune(pruner, layer, prunabe_output_indices)
+            metrics_after = model_handler.evaluate()
+            
+            # model_handler.finetune(conf.finetune_epochs)
+            
+            if not is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
+                pruner.save_state(model_handler.model, state, label, alpha_sequence)
+            else:
+                # load the labels and check if the saved lables are the same as metrics_after
+                # assert if not
+                pass
+
+            del model_handler
 
 
         
