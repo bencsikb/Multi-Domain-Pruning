@@ -179,6 +179,37 @@ def choose_alpha(alpha_sequence, i, alpha_pdf, conf, df_allsamples, n_possible_a
 
 
 
+class SampleHandler():
+    def __init__(self, conf: SimpleNamespace) -> None:
+        self.samples_path = conf.samples.save_path
+
+        self.sample_container = set()
+    
+    def read_all_samples(self) -> None:
+
+        for filename in os.listdir(self.samples_path):
+            if filename.endswith('.pkl'):
+                sample_df = pd.read_pickle(os.path.join(self.samples_path, filename))
+                self.add_sample(sample_df)               
+
+
+    def is_existing_sample(self, sample_df) -> bool:
+        sample_tuple = self.df_to_tuple(sample_df)
+        is_exists = True if sample_df in self.sample_container else False
+        return is_exists
+
+
+    def add_sample(self, sample_df) -> None:
+        sample_tuple = self.df_to_tuple(sample_df)
+        self.sample_container.add(sample_tuple)
+
+    def df_to_tuple(df):
+        return tuple(map(tuple, df.values))
+    
+    @property
+    def n_samples(self) -> int:
+        return len(self.sample_container)
+
 
 if __name__ == "__main__":
 
@@ -214,14 +245,9 @@ if __name__ == "__main__":
     alpha_pdf = ... # generate_pdf(n_prunable_layers, len(possible_alphas))
 
     # Load the samples df and get the n_samples 
-    samples_path = os.path.join(conf.samples.save_path, "allsamples.pkl")
-    if os.path.exist(samples_path):
-        df_allsamples = pd.read_pkl(samples_path)
-        sample_cnt = len(df_allsamples)
-    else: 
-        df_allsamples = pd.DataFrame(columns=[]) # TODO
-        sample_cnt = 0
-
+    sample_handler = SampleHandler()
+    sample_handler.read_all_samples()
+    sample_cnt = sample_handler.n_samples
 
     while sample_cnt < conf.max_samples:
 
@@ -233,7 +259,7 @@ if __name__ == "__main__":
             pruner.reset_model()
             
             # Check if the alpha_seq exists already
-            alpha, is_existing_sample = choose_alpha(pruner.alpha_sequence, i, alpha_pdf, conf, df_allsamples)    
+            alpha, is_existing_sample = choose_alpha(pruner.alpha_sequence, i, alpha_pdf, conf, df_allsamples)    # TODO remove sample dependency
 
             pruner.set_alpha(i, alpha)  
             pruner.select_indices()              
@@ -245,13 +271,17 @@ if __name__ == "__main__":
             
             # model_handler.finetune(conf.finetune_epochs)
             
-            if not is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
-                pass
-                # save state in pkl
-            else:
+            if sample_handler.is_existing_sample(df_to_save)): # Don't save if pruning is only performed to create further non-existing states
+                print("The state already exists in the dataset.") # TODO log
+                continue
                 # load the labels and check if the saved lables are the same as metrics_after
                 # assert if not
-                pass
+            else:
+                sample_save_path = os.path.join(conf.samples.save_path, str(sample_cnt) + ".pkl")
+                if os.path.exists(sample_save_path):
+                    assert f"Sample {sample_cnt} already exists!"
+                df_to_save.to_pickle(sample_save_path)
+                sample_handler.add_sample(df_to_save)
 
             del model_handler
 
