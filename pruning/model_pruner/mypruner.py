@@ -38,12 +38,17 @@ class StepWisePruner():
         self.n_prunable_layers = len(flattened_conv_layers) - len(ignored_layers)
 
         self.example_inputs = torch.randn(1, 3, 224, 224) #TODO
-        self.layer_i = 0
+        self._layer_i = 0
+
+        self.state_features = []
+        self.metrics_features = []
 
         self._all_indices = [None] * self.n_prunable_layers
-        self._state = torch.full([self.n_prunable_layers, conf.n_features], -1.0)
-        self._label = torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
-        self._alpha_sequence = np.full(self.n_prunable_layers, -1)                
+        self._model_state =  pd.DataFrame(0, index=range(self.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
+        self._label = pd.DataFrame(0, index=range(self.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
+        self._alpha_sequence = pd.DataFrame(0, index=range(self.n_prunable_layers), columns=[alpha]) #np.full(self.n_prunable_layers, -1)           
+
+        #TODO call reset model     
 
 
     def reset_model(self) -> None:
@@ -52,7 +57,8 @@ class StepWisePruner():
         """
         del self._model_handler
         self._model_handler = self._init_model_handler
-        self.layer_i += 1
+        self._layer_i += 1
+        self._layer = self.prunable_layers[self._layer_i] # TODO separat func? 
 
     
     def reset_state(self) -> None:
@@ -60,15 +66,15 @@ class StepWisePruner():
         Should be called before pruning the first layer.
         """
         self._all_indices = [None] * self.n_prunable_layers
-        self._state = torch.full([self.n_prunable_layers, conf.n_features], -1.0)
+        self._model_state = torch.full([self.n_prunable_layers, conf.n_features], -1.0)
         self._label = torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
         self._alpha_sequence = np.full(self.n_prunable_layers, -1)    
 
     def select_indices(self) -> None:
         """ Select the indices to be removed from the output dimension, based on the given alpha.
         """
-        idxs = channel_selector.select_indices(self.prunable_layers[self.layer_i], self.alpha_sequence[self.layer_i])
-        self._all_indices[self.layer_i] = idxs
+        idxs = channel_selector.select_indices(self.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
+        self._all_indices[self._layer_i] = idxs
    
 
     def prune_model(self) -> None:   
@@ -85,30 +91,46 @@ class StepWisePruner():
         self.metrics = self._model_handler.evaluate()
 
 
-    def update_state_and_label():
-        pass
-        """
-        state[row_cnt, 1] = normalize(parser['in_ch'], 0, 1024)
-        state[row_cnt, 2] = normalize(parser['out_ch'], 0, 1024)
-        state[row_cnt, 3,] = normalize(parser['kernel'], 0, 3)
-        state[row_cnt, 4] = normalize(parser['stride'], 0, 2)
-        state[row_cnt, 5] = normalize(parser['pad'], 0, 1)
-        state[row_cnt, 6] = prev_spars
-        """
+    def update_state_and_label(self) -> None:
+                
+        self._model_state.loc[self._layer_i, 'in_ch'] = self._layer.in_channels
+        self._model_state.loc[self._layer_i, 'out_ch'] = self._layer.out_channels
+        self._model_state.loc[self._layer_i, 'kernel'] = self._layer.kernel_size[0]
+        self._model_state.loc[self._layer_i, 'stride'] = self._layer.stride[0]
+        self._model_state.loc[self._layer_i, 'pad'] = self._layer.padding[0]
+        self._model_state.loc[self._layer_i, 'n_pruned_ch'] = len(self._all_indices[self._layer_i]) 
+        # TODO all other stuff
 
+        # Model eval
+        metrics = self._model_handler.evaluate()
+        self._label.loc[self._layer_i, 'recall'] = metrics[0]
+        self._label.loc[self._layer_i, 'precision'] = metrics[1]
+        self._label.loc[self._layer_i, 'f1'] = metrics[2]
+        self._label.loc[self._layer_i, 'map50'] = metrics[3]
+        self._label.loc[self._layer_i, 'map90'] = metrics[4]
     
     def fine_tune():
          pass
 
-    def set_alpha(self, alpha):
+    def set_alpha(self, alpha) -> None:
         #if self.last_set_alpha + 1 != i:
         #    assert "TODO"
         #else:
-        self._alpha_sequence[self.layer_i] = alpha # TODO normalize
+        self._alpha_sequence.loc[self._layer_i] = alpha # TODO normalize
     
     @property
-    def alpha_sequence(self):
+    def alpha_sequence(self) -> np.array:
         return self._alpha_sequence
+
+    @property
+    def df_to_save(self) -> np.array:
+        return pd.concat([self._alpha_sequence, self._model_state, self._label], axis=1)
+    
+    @property 
+    def label(self) -> np.array:
+        return self._label #TODO normalize
+
+
 
 
 
@@ -118,9 +140,6 @@ class StepWisePruner():
 class OneShotPruner():
         def __init__(self) -> None:
             pass
-
-
-
 
 
 def choose_alpha(alpha_sequence, i, alpha_pdf, conf, df_allsamples, n_possible_alphas):
@@ -222,13 +241,13 @@ if __name__ == "__main__":
             pruner.eval_pruned_model()
             pruner.update_state_and_label()
 
-            pruner.get_state_with_alpha() #TODO
-            pruner.get_label() #TODO
+            df_to_save = pruner.df_to_save # alpha, model_state, metric labels
             
             # model_handler.finetune(conf.finetune_epochs)
             
             if not is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
-                pruner.save_state(model_handler.model, state, label, alpha_sequence)
+                pass
+                # save state in pkl
             else:
                 # load the labels and check if the saved lables are the same as metrics_after
                 # assert if not
