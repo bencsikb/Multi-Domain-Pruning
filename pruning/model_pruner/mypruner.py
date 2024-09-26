@@ -271,7 +271,7 @@ if __name__ == "__main__":
             
             # model_handler.finetune(conf.finetune_epochs)
             
-            if sample_handler.is_existing_sample(df_to_save)): # Don't save if pruning is only performed to create further non-existing states
+            if sample_handler.is_existing_sample(df_to_save): # Don't save if pruning is only performed to create further non-existing states
                 print("The state already exists in the dataset.") # TODO log
                 continue
                 # load the labels and check if the saved lables are the same as metrics_after
