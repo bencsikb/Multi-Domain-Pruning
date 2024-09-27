@@ -1,13 +1,17 @@
 import torch.nn as nn
 import torch_pruning as tp
 import gc
+import sys
+import os
 
 
 class ModelHandler:
-    def __init__(self) -> None:
+    def __init__(self, model_conf) -> None:
         self._model = None
         self._flattened_layers = []
-        
+        self.model_conf = model_conf
+
+                
     
     def load_pretrained(self, type: str) -> None:
         from ultralytics import YOLOv10
@@ -26,8 +30,10 @@ class ModelHandler:
         pass
 
     def evaluate(self) -> list:
-        pass
-        return []
+        
+        metrics = self._model.val(data=self.model_conf.data, batch=self.model_conf.batch_size)
+
+        return metrics
     
     def prune(self, all_indices):
 

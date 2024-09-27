@@ -10,12 +10,6 @@ from src.model.model_handler import ModelHandler
 from pruning.channel_selection.channel_selector import ChannelSelector
 from utils.config_parser import ConfigParser
 from types import SimpleNamespace
-from pruning.channel_selection.channel_selector import ChannelSelector
-
-def prune_layer(model):
-     pass
-
-
 
 
 class StepWisePruner():
@@ -131,11 +125,6 @@ class StepWisePruner():
     @property 
     def label(self) -> np.array:
         return self._label #TODO normalize
-
-
-
-
-
 
 
 
