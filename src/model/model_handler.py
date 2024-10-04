@@ -10,8 +10,8 @@ class ModelHandler:
     def __init__(self, model_conf) -> None:
         self._model = None
         self._flattened_layers = []
-        self.model_conf = model_conf
-        self.example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
+        self._model_conf = model_conf
+        self._example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
 
                 
     
@@ -26,33 +26,39 @@ class ModelHandler:
     
     def flatten_conv_layers(self) -> None:
 
-        self._flattened_layers = [module for module in self.model.modules() if isinstance(module, nn.Conv2d)]
+        self._flattened_layers = [module for module in self._model.modules() if isinstance(module, nn.Conv2d)]
+    
+    def determine_prunable_layers(self) -> None: 
+        
+        ignored_layer_idxs = self._model_conf.ignored_layers
+        self._prunable_layers = [layer for i, layer in enumerate(self._flattened_layers) if i not in ignored_layer_idxs]
+
 
     def train(self):
         pass
 
     def evaluate(self) -> list:
-        
-        metrics = self._model.val(data=self.model_conf.data, batch=self.model_conf.batch_size)
+
+        metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size)
 
         return metrics
     
     def prune(self, all_indices):
 
-        DG = tp.DependencyGraph().build_dependency(self._model, self.example_input)
+        self._model = self._model.model.train()
+
+        DG = tp.DependencyGraph().build_dependency(self._model, self._example_input)
 
         def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
                     pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
                     pruning_group.prune()
 
-        for i, layer in enumerate(self._flattened_layers):
-            
-            if i in self.ignored_layers:
-                continue
+        for i, layer in enumerate(self._prunable_layers):
 
-            indices = all_indices[i]        
+            indices = all_indices[i]     
 
-            prune_conv_layer(layer, indices)
+            if indices is not None:   
+                prune_conv_layer(layer, indices)
             
             del layer
             gc.collect()
@@ -77,6 +83,13 @@ class ModelHandler:
     def flattened_layers(self) -> list:
         return self._flattened_layers
 
+    @property
+    def prunable_layers(self) -> list:
+        return self._prunable_layers
+    
+    @property
+    def n_prunable_layers(self) -> int:
+        return len(self._prunable_layers)
 
     
 

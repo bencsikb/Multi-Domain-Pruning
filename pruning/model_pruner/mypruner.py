@@ -25,22 +25,16 @@ class StepWisePruner():
         self.conf = conf
         self.channel_selector = channel_selector
 
-        self.flattened_conv_layers = self._model_handler.flattened_layers
-        self.ignored_layers = self.conf.model.ignored_layers
-        self.prunable_layers = ... # TODO remove ignored layers from falttened_conv_layers
-        self.n_conv_layers = len(self.flattened_conv_layers)
-        self.n_prunable_layers = len(flattened_conv_layers) - len(ignored_layers)
-
         self._layer_i = -1
         self._metrics = None
 
         self.state_features = []
         self.metrics_features = []
 
-        self._all_indices = [None] * self.n_prunable_layers
-        self._model_state =  pd.DataFrame(0, index=range(self.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
-        self._label = pd.DataFrame(0, index=range(self.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
-        self._alpha_sequence = pd.DataFrame(0, index=range(self.n_prunable_layers), columns=['alpha']) #np.full(self.n_prunable_layers, -1)           
+        self._all_indices = [None] * self._model_handler.n_prunable_layers
+        self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
+        self._label = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
+        self._alpha_sequence = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=['alpha']) #np.full(self.n_prunable_layers, -1)           
 
         #TODO call reset model     
 
@@ -52,7 +46,7 @@ class StepWisePruner():
         del self._model_handler
         self._model_handler = self._init_model_handler
         self._layer_i += 1
-        self._layer = self.flattened_conv_layers[self._layer_i] # TODO self.prunable_layers[self._layer_i] # TODO separat func? 
+        self._layer = self._model_handler.prunable_layers[self._layer_i] # TODO self.prunable_layers[self._layer_i] # TODO separat func? 
 
     
     def reset_state(self) -> None:
@@ -60,17 +54,17 @@ class StepWisePruner():
         Should be called before pruning the first layer.
         """
         self._layer_i = -1
-        self._all_indices = [None] * self.n_prunable_layers
-        self._model_state =  pd.DataFrame(0, index=range(self.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
-        self._label = pd.DataFrame(0, index=range(self.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
-        self._alpha_sequence = pd.DataFrame(0, index=range(self.n_prunable_layers), columns=['alpha']) #np.full(self.n_prunable_layers, -1)           
- 
+        self._all_indices = [None] * self._model_handler.n_prunable_layers
+        self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
+        self._label = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
+        self._alpha_sequence = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=['alpha']) #np.full(self.n_prunable_layers, -1)           
+
 
     def select_indices(self) -> None:
         """ Select the indices to be removed from the output dimension, based on the given alpha.
         """
-        #TODO idxs = channel_selector.select_indices(self.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
-        idxs = channel_selector.select_indices(self.flattened_conv_layers[self._layer_i], self._alpha_sequence.loc[self._layer_i, 'alpha'])
+        idxs = channel_selector.select_indices(self._model_handler.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
+        #idxs = channel_selector.select_indices(self.flattened_conv_layers[self._layer_i], self._alpha_sequence.loc[self._layer_i, 'alpha'])
 
         self._all_indices[self._layer_i] = idxs
    
@@ -78,7 +72,7 @@ class StepWisePruner():
     def prune_model(self) -> None:   
         """ Prunes the initial model by calling the model_handler's prune function.
         """
-
+    
         self._model_handler.prune(self._all_indices)
     
 
@@ -233,11 +227,9 @@ if __name__ == "__main__":
     # TODO load model and check of metrics are same as in the generated config file
     metrics = []
     model_handler.flatten_conv_layers()
-    flattened_conv_layers = model_handler.flattened_layers
-    ignored_layers = conf.model.ignored_layers  
-    flattened_prunable_layers = ... # TODO
-    n_prunable_layers = len(flattened_conv_layers) - len(ignored_layers)
-
+    model_handler.determine_prunable_layers()
+    prunable_layers = model_handler.prunable_layers
+  
     channel_selector = ChannelSelector(conf.channel_selection)
     pruner = StepWisePruner(model_handler, metrics, conf, channel_selector)
 
@@ -255,7 +247,7 @@ if __name__ == "__main__":
 
         pruner.reset_state()
 
-        for i, layer in enumerate(flattened_conv_layers): # TODO enumerate(flattened_prunable_layers):
+        for i, layer in enumerate(prunable_layers):
 
             # Load model
             pruner.reset_model()
