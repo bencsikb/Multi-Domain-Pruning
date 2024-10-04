@@ -41,7 +41,7 @@ class ModelHandler:
 
         metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size)
 
-        return metrics
+        return metrics.results_dict.values
     
     def prune(self, all_indices):
 

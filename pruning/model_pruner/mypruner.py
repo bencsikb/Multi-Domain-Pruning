@@ -72,8 +72,8 @@ class StepWisePruner():
     def prune_model(self) -> None:   
         """ Prunes the initial model by calling the model_handler's prune function.
         """
-    
-        self._model_handler.prune(self._all_indices)
+        if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
+            self._model_handler.prune(self._all_indices)
     
 
     def eval_pruned_model(self) -> None:
@@ -98,9 +98,9 @@ class StepWisePruner():
             assert "Metrics after pruning are missing. Function \"eval_pruned_model\" has to be called first!"
         self._label.loc[self._layer_i, 'recall'] = self._metrics[0]
         self._label.loc[self._layer_i, 'precision'] = self._metrics[1]
-        self._label.loc[self._layer_i, 'f1'] = self._metrics[2]
-        self._label.loc[self._layer_i, 'map50'] = self._metrics[3]
-        self._label.loc[self._layer_i, 'map90'] = self._metrics[4]
+        #self._label.loc[self._layer_i, 'f1'] = self._metrics[2]
+        self._label.loc[self._layer_i, 'map50'] = self._metrics[2]
+        self._label.loc[self._layer_i, 'map90'] = self._metrics[3]
     
     def fine_tune():
          pass
