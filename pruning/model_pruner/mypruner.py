@@ -25,14 +25,13 @@ class StepWisePruner():
         self.conf = conf
         self.channel_selector = channel_selector
 
-        self.flattened_conv_layers = self._model_handler.flatten_conv_layers
+        self.flattened_conv_layers = self._model_handler.flattened_layers
         self.ignored_layers = self.conf.model.ignored_layers
         self.prunable_layers = ... # TODO remove ignored layers from falttened_conv_layers
         self.n_conv_layers = len(self.flattened_conv_layers)
         self.n_prunable_layers = len(flattened_conv_layers) - len(ignored_layers)
 
-        self.example_inputs = torch.randn(1, 3, 224, 224) #TODO
-        self._layer_i = 0
+        self._layer_i = -1
         self._metrics = None
 
         self.state_features = []
@@ -53,22 +52,26 @@ class StepWisePruner():
         del self._model_handler
         self._model_handler = self._init_model_handler
         self._layer_i += 1
-        self._layer = self.prunable_layers[self._layer_i] # TODO separat func? 
+        self._layer = self.flattened_conv_layers[self._layer_i] # TODO self.prunable_layers[self._layer_i] # TODO separat func? 
 
     
     def reset_state(self) -> None:
         """ Resets the state and labels.
         Should be called before pruning the first layer.
         """
+        self._layer_i = -1
         self._all_indices = [None] * self.n_prunable_layers
-        self._model_state = torch.full([self.n_prunable_layers, conf.n_features], -1.0)
-        self._label = torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
-        self._alpha_sequence = np.full(self.n_prunable_layers, -1)    
+        self._model_state =  pd.DataFrame(0, index=range(self.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
+        self._label = pd.DataFrame(0, index=range(self.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
+        self._alpha_sequence = pd.DataFrame(0, index=range(self.n_prunable_layers), columns=['alpha']) #np.full(self.n_prunable_layers, -1)           
+ 
 
     def select_indices(self) -> None:
         """ Select the indices to be removed from the output dimension, based on the given alpha.
         """
-        idxs = channel_selector.select_indices(self.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
+        #TODO idxs = channel_selector.select_indices(self.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
+        idxs = channel_selector.select_indices(self.flattened_conv_layers[self._layer_i], self._alpha_sequence.loc[self._layer_i, 'alpha'])
+
         self._all_indices[self._layer_i] = idxs
    
 
@@ -115,7 +118,7 @@ class StepWisePruner():
         self._alpha_sequence.loc[self._layer_i, 'alpha'] = alpha # TODO normalize
     
     @property
-    def alpha_sequence(self) -> np.array:
+    def alpha_sequence(self) -> pd.DataFrame:
         return self._alpha_sequence
 
     @property
@@ -137,8 +140,8 @@ def choose_alpha(alpha_sequence, i, alpha_pdf, conf, sample_handler):
     
     def _apply_skip_rules(conf):
         alpha = 1.0
-        skipunder = getattr(conf.skiprule, "skipunder", None)
-        skipmod = getattr(conf.skiprule, "skipmod", None)
+        skipunder = getattr(conf.channel_selection, "skipunder", None)
+        skipmod = getattr(conf.channel_selection, "skipmod", None)
 
         if (skipunder is not None) and (i < skipunder):
             alpha = 0.0
@@ -148,11 +151,11 @@ def choose_alpha(alpha_sequence, i, alpha_pdf, conf, sample_handler):
         return alpha
 
     #TODO This sould actually go to the PDF generator
-    if getattr(conf.alpha.value_list, None) is not None:
+    if getattr(conf.alpha, 'value_list', None) is not None:
         possible_alphas = conf.alpha.value_list
     else:
         assert hasattr(conf.alpha, 'min_max_step'), "Alpha value list OR min, max, step values must be provided!"
-        possible_alphas = range(conf.alpha.min_max_step[0], conf.alpha.min_max_step[1], conf.alpha.min_max_step[2])
+        possible_alphas = np.arange(conf.alpha.min_max_step[0], conf.alpha.min_max_step[1], conf.alpha.min_max_step[2])
     n_possible_alphas = len(possible_alphas)
 
     alpha_seq_df = alpha_sequence.copy()
@@ -166,7 +169,7 @@ def choose_alpha(alpha_sequence, i, alpha_pdf, conf, sample_handler):
         if alpha not in tried_alphas:
             tried_alphas.append(alpha)
             alpha_seq_df.loc[i, 'alpha'] = alpha  
-            is_existing_sample = sample_handler.is_existing_alpha_seq(alpha_seq_df)
+            is_existing_sample = sample_handler.is_existing_sample(alpha_seq_df)
         
         if len(tried_alphas) == n_possible_alphas:  
                 break              
@@ -201,7 +204,7 @@ class SampleHandler():
         sample_tuple = self.df_to_tuple(alpha_df)
         self.sample_container.add(sample_tuple)
 
-    def df_to_tuple(df):
+    def df_to_tuple(self, df):
         return tuple(map(tuple, df.values))
     
     @property
@@ -214,7 +217,7 @@ if __name__ == "__main__":
     conf = ConfigParser.read("config/pruning/pruning_sampling.ini")
     
     # Load model
-    model_handler = ModelHandler()
+    model_handler = ModelHandler(conf.model)
     if conf.model.model_path is not None:
         # TODO load model
         pass 
@@ -223,11 +226,12 @@ if __name__ == "__main__":
         # TODO hasattr handling
 
     # Evaluate model 
-    metrics = model_handler.evaluate()
+    # TODO metrics = model_handler.evaluate()
     # Save results
 
     # Determine prunable layers
     # TODO load model and check of metrics are same as in the generated config file
+    metrics = []
     model_handler.flatten_conv_layers()
     flattened_conv_layers = model_handler.flattened_layers
     ignored_layers = conf.model.ignored_layers  
@@ -243,15 +247,15 @@ if __name__ == "__main__":
     alpha_pdf = ... # generate_pdf(n_prunable_layers, len(possible_alphas))
 
     # Load the samples df and get the n_samples 
-    sample_handler = SampleHandler()
+    sample_handler = SampleHandler(conf)
     sample_handler.read_all_samples()
     sample_cnt = sample_handler.n_samples
 
-    while sample_cnt < conf.max_samples:
+    while sample_cnt < conf.samples.max_samples:
 
         pruner.reset_state()
 
-        for i, layer in enumerate(flattened_prunable_layers):
+        for i, layer in enumerate(flattened_conv_layers): # TODO enumerate(flattened_prunable_layers):
 
             # Load model
             pruner.reset_model()
@@ -259,7 +263,7 @@ if __name__ == "__main__":
             # Check if the alpha_seq exists already
             alpha, is_existing_sample = choose_alpha(pruner.alpha_sequence, i, None, conf, sample_handler)    # TODO remove sample dependency
 
-            pruner.set_alpha(i, alpha)  
+            pruner.set_alpha(alpha)  
             pruner.select_indices()              
             pruner.prune_model()
             pruner.eval_pruned_model()

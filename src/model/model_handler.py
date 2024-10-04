@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch_pruning as tp
+import torch
 import gc
 import sys
 import os
@@ -10,6 +11,7 @@ class ModelHandler:
         self._model = None
         self._flattened_layers = []
         self.model_conf = model_conf
+        self.example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
 
                 
     
@@ -37,7 +39,7 @@ class ModelHandler:
     
     def prune(self, all_indices):
 
-        DG = tp.DependencyGraph().build_dependency(self._model, self.example_inputs)
+        DG = tp.DependencyGraph().build_dependency(self._model, self.example_input)
 
         def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
                     pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)

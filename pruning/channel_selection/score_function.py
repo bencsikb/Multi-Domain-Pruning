@@ -5,7 +5,7 @@ import random
 import numpy as np
 
 class BaseSelector(ABC):
-    def __init__(self, **spec) -> None:
+    def __init__(self) -> None:
         super().__init__()
     
     @abstractmethod
@@ -15,10 +15,10 @@ class BaseSelector(ABC):
 
 
 class PuRLSelector(BaseSelector):
-    def __init__(self, **spec) -> None:
-        super().__init__(**spec)
+    def __init__(self) -> None:
+        super().__init__()
 
-    def select_indices(self, layer: nn.Conv2, alpha: float) -> list:
+    def select_indices(self, layer: nn.Conv2d, alpha: float) -> list:
 
         # Calculate norm for every channel
         norms = (torch.norm(layer.weight.data, 'fro', dim=[2, 3]))
@@ -44,41 +44,3 @@ class PuRLSelector(BaseSelector):
     
     
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    
-    
-    def select_indices(self, layer) -> dict:
-       
-        flattened_layers = self.flatten_layers(model)
-        indices = {}
-
-        def score_function(layer, alpha: float) -> list:
-            
-            indices = ... # output channel indices for the given layer
-            return indices
-
-        for i, layer in enumerate(flattened_layers):
-            indices[f"{i}"] = score_function(layer, self.alpha_sequence[i])
-             
-        return indices
