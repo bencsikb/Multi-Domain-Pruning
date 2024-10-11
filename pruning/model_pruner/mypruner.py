@@ -20,6 +20,7 @@ class StepWisePruner():
                 
         self._init_model_handler = model_handler
         self._init_metrics = self._init_model_handler.evaluate()
+        #self._init_metrics = [0,0,0,0,0]
         self.conf = conf
         self.channel_selector = channel_selector
 
@@ -190,19 +191,17 @@ class SampleHandler():
                 data_df = pd.read_pickle(os.path.join(self.samples_path, filename))
                 self.add_sample(data_df)               
 
-
     def is_existing_sample(self, data_df) -> bool:
-        sample_tuple = self.df_to_tuple(data_df)
-        is_exists = True if sample_tuple in self.sample_container else False
-        return is_exists
-
+        sample_string = self.df_to_string(data_df)
+        return sample_string in self.sample_container
 
     def add_sample(self, data_df) -> None:
-        sample_tuple = self.df_to_tuple(data_df)
-        self.sample_container.add(sample_tuple)
+        sample_string = self.df_to_string(data_df)
+        self.sample_container.add(sample_string)
 
-    def df_to_tuple(self, df) -> tuple:
-        return tuple(df.apply(lambda x: x.item() if isinstance(x, (np.generic, np.ndarray)) else x))
+    def df_to_string(self, df) -> str:
+        # Convert all values to a single string by flattening and concatenating
+        return ''.join(map(str, df.values.flatten()))
 
     
     @property
