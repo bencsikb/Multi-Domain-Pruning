@@ -1,9 +1,14 @@
 import torch.nn as nn
 import torch_pruning as tp
 import torch
+import numpy as np
 import gc
 import sys
 import os
+from thop import profile
+from fvcore.nn import FlopCountAnalysis
+import torchvision.transforms as T
+
 
 
 class ModelHandler:
@@ -12,7 +17,6 @@ class ModelHandler:
         self._flattened_layers = []
         self._model_conf = model_conf
         self._example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
-
                 
     
     def load_pretrained(self, type: str) -> None:
@@ -39,15 +43,21 @@ class ModelHandler:
 
     def evaluate(self) -> list:
 
-        metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size)
+        prec_metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size)
+        
+        M_params = sum(p.numel() for p in self._model.parameters()) / 1e6
+        # TODO calculate flops
 
-        return metrics.results_dict.values
+        metrics = list(prec_metrics.results_dict.values())[:4] + [M_params]
+
+        return metrics # [precision, recall, map50, map95, M_paramns]
     
     def prune(self, all_indices):
 
         self._model = self._model.model.train()
 
-        DG = tp.DependencyGraph().build_dependency(self._model, self._example_input)
+        device = next(self._model.parameters()).device.type
+        DG = tp.DependencyGraph().build_dependency(self._model, self._example_input.to(device))
 
         def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
                     pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)

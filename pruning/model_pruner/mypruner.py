@@ -15,27 +15,20 @@ from types import SimpleNamespace
 class StepWisePruner():
     def __init__(self, 
                  model_handler: ModelHandler, 
-                 init_metrics: dict, 
                  conf: SimpleNamespace, 
                  channel_selector: ChannelSelector) -> None:
                 
         self._init_model_handler = model_handler
-        self._model_handler = self._init_model_handler
-        self._init_metrics = init_metrics
+        self._init_metrics = self._init_model_handler.evaluate()
         self.conf = conf
         self.channel_selector = channel_selector
 
+        self.state_features = ['in_ch', 'out_ch', 'kernel', 'stride', 'pad', 'n_pruned_ch']
+        self.metrics_features = ['recall', 'precision', 'map50', 'map90', 'n_params', 'init_recall', 'init_precision', 'init_map50', 'init_map90', 'init_n_params']
+
         self._layer_i = -1
-        self._metrics = None
-
-        self.state_features = []
-        self.metrics_features = []
-
-        self._all_indices = [None] * self._model_handler.n_prunable_layers
-        self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
-        self._label = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
-        self._alpha_sequence = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=['alpha']) #np.full(self.n_prunable_layers, -1)           
-
+        self._model_handler = self._init_model_handler
+        self.reset_state()
         #TODO call reset model     
 
 
@@ -54,6 +47,7 @@ class StepWisePruner():
         Should be called before pruning the first layer.
         """
         self._layer_i = -1
+        self._metrics = self._init_metrics
         self._all_indices = [None] * self._model_handler.n_prunable_layers
         self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
         self._label = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
@@ -72,7 +66,7 @@ class StepWisePruner():
     def prune_model(self) -> None:   
         """ Prunes the initial model by calling the model_handler's prune function.
         """
-        if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
+        if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]: # prune only if there is sth to prune
             self._model_handler.prune(self._all_indices)
     
 
@@ -80,27 +74,38 @@ class StepWisePruner():
         """ Evaluates the model after pruning and updates the metrics after pruning.
         """
         # TODO metrics should be reinitialized somewhere
-        self._metrics = self._model_handler.evaluate()
+        if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
+            self._metrics = self._model_handler.evaluate()
 
 
-    def update_state_and_label(self) -> None:
+    def update_state(self) -> None:
                 
         self._model_state.loc[self._layer_i, 'in_ch'] = self._layer.in_channels
         self._model_state.loc[self._layer_i, 'out_ch'] = self._layer.out_channels
         self._model_state.loc[self._layer_i, 'kernel'] = self._layer.kernel_size[0]
         self._model_state.loc[self._layer_i, 'stride'] = self._layer.stride[0]
         self._model_state.loc[self._layer_i, 'pad'] = self._layer.padding[0]
-        self._model_state.loc[self._layer_i, 'n_pruned_ch'] = len(self._all_indices[self._layer_i]) 
+        if self._layer_i - 1  >= 0:
+            self._model_state.loc[self._layer_i-1, 'n_pruned_ch'] = len(self._all_indices[self._layer_i-1]) 
         # TODO all other stuff
 
+    def update_label(self) -> None:
         # Model eval
-        if self._metrics is None:
-            assert "Metrics after pruning are missing. Function \"eval_pruned_model\" has to be called first!"
+        assert self._metrics is not None, "Metrics after pruning are missing. Function \"eval_pruned_model\" has to be called first!"
         self._label.loc[self._layer_i, 'recall'] = self._metrics[0]
         self._label.loc[self._layer_i, 'precision'] = self._metrics[1]
         #self._label.loc[self._layer_i, 'f1'] = self._metrics[2]
         self._label.loc[self._layer_i, 'map50'] = self._metrics[2]
         self._label.loc[self._layer_i, 'map90'] = self._metrics[3]
+        self._label.loc[self._layer_i, 'n_params'] = self._metrics[4]
+
+        # Add init metrics
+        self._label.loc[self._layer_i, 'init_recall'] = self._init_metrics[0]
+        self._label.loc[self._layer_i, 'init_precision'] = self._init_metrics[1]
+        self._label.loc[self._layer_i, 'init_map50'] = self._init_metrics[2]
+        self._label.loc[self._layer_i, 'init_map90'] = self._init_metrics[3]
+        self._label.loc[self._layer_i, 'init_n_params'] = self._init_metrics[4]
+
     
     def fine_tune():
          pass
@@ -116,13 +121,13 @@ class StepWisePruner():
         return self._alpha_sequence
 
     @property
-    def df_to_save(self) -> np.array:
-        return pd.concat([self._alpha_sequence, self._model_state, self._label], axis=1)
+    def data(self) -> pd.DataFrame:
+        data_df = pd.concat([self._alpha_sequence, self._model_state, ], axis=1)
+        return data_df
     
     @property 
-    def label(self) -> np.array:
+    def label(self) -> pd.DataFrame:
         return self._label #TODO normalize
-
 
 
 class OneShotPruner():
@@ -130,7 +135,7 @@ class OneShotPruner():
             pass
 
 
-def choose_alpha(alpha_sequence, i, alpha_pdf, conf, sample_handler):
+def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
     
     def _apply_skip_rules(conf):
         alpha = 1.0
@@ -152,18 +157,18 @@ def choose_alpha(alpha_sequence, i, alpha_pdf, conf, sample_handler):
         possible_alphas = np.arange(conf.alpha.min_max_step[0], conf.alpha.min_max_step[1], conf.alpha.min_max_step[2])
     n_possible_alphas = len(possible_alphas)
 
-    alpha_seq_df = alpha_sequence.copy()
+    data_temp = data.copy()
     tried_alphas = []
     is_existing_sample = True
     while is_existing_sample:
         alpha = _apply_skip_rules(conf)
         if alpha != 0.0:
-            alpha = np.random()  # Random value if not skipped
+            alpha = np.random.rand() #TODO  # Random value if not skipped
         
         if alpha not in tried_alphas:
             tried_alphas.append(alpha)
-            alpha_seq_df.loc[i, 'alpha'] = alpha  
-            is_existing_sample = sample_handler.is_existing_sample(alpha_seq_df)
+            data_temp.loc[i, 'alpha'] = alpha  
+            is_existing_sample = sample_handler.is_existing_sample(data_temp)
         
         if len(tried_alphas) == n_possible_alphas:  
                 break              
@@ -174,7 +179,7 @@ def choose_alpha(alpha_sequence, i, alpha_pdf, conf, sample_handler):
 
 class SampleHandler():
     def __init__(self, conf: SimpleNamespace) -> None:
-        self.samples_path = conf.samples.save_path
+        self.samples_path = os.path.join(conf.samples.save_path, "data")
 
         self.sample_container = set()
     
@@ -182,24 +187,23 @@ class SampleHandler():
 
         for filename in os.listdir(self.samples_path):
             if filename.endswith('.pkl'):
-                sample_df = pd.read_pickle(os.path.join(self.samples_path, filename))
-                alpha_seq = sample_df['alpha']
-                self.add_sample(alpha_seq)               
+                data_df = pd.read_pickle(os.path.join(self.samples_path, filename))
+                self.add_sample(data_df)               
 
 
-    def is_existing_sample(self, alpha_df) -> bool:
-        sample_tuple = self.df_to_tuple(alpha_df)
+    def is_existing_sample(self, data_df) -> bool:
+        sample_tuple = self.df_to_tuple(data_df)
         is_exists = True if sample_tuple in self.sample_container else False
         return is_exists
 
 
-    def add_sample(self, sample_df) -> None:
-        alpha_df = sample_df['alpha']
-        sample_tuple = self.df_to_tuple(alpha_df)
+    def add_sample(self, data_df) -> None:
+        sample_tuple = self.df_to_tuple(data_df)
         self.sample_container.add(sample_tuple)
 
-    def df_to_tuple(self, df):
-        return tuple(map(tuple, df.values))
+    def df_to_tuple(self, df) -> tuple:
+        return tuple(df.apply(lambda x: x.item() if isinstance(x, (np.generic, np.ndarray)) else x))
+
     
     @property
     def n_samples(self) -> int:
@@ -219,19 +223,15 @@ if __name__ == "__main__":
         model_handler.load_pretrained(type = conf.model.pretrained_type) 
         # TODO hasattr handling
 
-    # Evaluate model 
-    # TODO metrics = model_handler.evaluate()
-    # Save results
-
     # Determine prunable layers
     # TODO load model and check of metrics are same as in the generated config file
-    metrics = []
+    #metrics = []
     model_handler.flatten_conv_layers()
     model_handler.determine_prunable_layers()
     prunable_layers = model_handler.prunable_layers
   
     channel_selector = ChannelSelector(conf.channel_selection)
-    pruner = StepWisePruner(model_handler, metrics, conf, channel_selector)
+    pruner = StepWisePruner(model_handler, conf, channel_selector)
 
     del model_handler
 
@@ -241,9 +241,8 @@ if __name__ == "__main__":
     # Load the samples df and get the n_samples 
     sample_handler = SampleHandler(conf)
     sample_handler.read_all_samples()
-    sample_cnt = sample_handler.n_samples
 
-    while sample_cnt < conf.samples.max_samples:
+    while sample_handler.n_samples < conf.samples.max_samples:
 
         pruner.reset_state()
 
@@ -251,6 +250,7 @@ if __name__ == "__main__":
 
             # Load model
             pruner.reset_model()
+            pruner.update_state()
             
             # Check if the alpha_seq exists already
             alpha, is_existing_sample = choose_alpha(pruner.alpha_sequence, i, None, conf, sample_handler)    # TODO remove sample dependency
@@ -259,11 +259,7 @@ if __name__ == "__main__":
             pruner.select_indices()              
             pruner.prune_model()
             pruner.eval_pruned_model()
-            pruner.update_state_and_label()
-
-            df_to_save = pruner.df_to_save # alpha, model_state, metric labels
-            
-            # model_handler.finetune(conf.finetune_epochs)
+            pruner.update_label()            
             
             if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
                 print("The state already exists in the dataset.") # TODO log
@@ -271,13 +267,21 @@ if __name__ == "__main__":
                 # load the labels and check if the saved lables are the same as metrics_after
                 # assert if not
             else:
-                sample_save_path = os.path.join(conf.samples.save_path, str(sample_cnt) + ".pkl")
-                if os.path.exists(sample_save_path):
-                    assert f"Sample {sample_cnt} already exists!"
-                df_to_save.to_pickle(sample_save_path)
-                sample_handler.add_sample(df_to_save)
+                data_save_path = os.path.join(conf.samples.save_path, "data", str(sample_handler.n_samples) + ".pkl")
+                label_save_path = os.path.join(conf.samples.save_path, "label", str(sample_handler.n_samples) + ".pkl")
 
-            del model_handler
+                try:
+                    if os.path.exists(data_save_path):
+                        raise FileExistsError(f"Sample {sample_handler.n_samples} already exists at {data_save_path}!")
+                    elif os.path.exists(label_save_path):
+                        raise FileExistsError(f"Sample {sample_handler.n_samples} already exists at {label_save_path}!")
+                except FileExistsError as e:
+                    print(f"Error: {e}")
+
+                pruner.data.to_pickle(data_save_path)
+                pruner.label.to_pickle(label_save_path)
+                sample_handler.add_sample(pruner.data)
+
 
 
         
