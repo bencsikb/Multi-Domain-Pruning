@@ -18,9 +18,9 @@ class StepWisePruner():
                  conf: SimpleNamespace, 
                  channel_selector: ChannelSelector) -> None:
                 
-        self._init_model_handler = model_handler
-        self._init_metrics = self._init_model_handler.evaluate()
-        #self._init_metrics = [0,0,0,0,0]
+        self._model_handler = model_handler
+        #self._init_metrics = self._init_model_handler.evaluate()
+        self._init_metrics = [0,0,0,0,0]
         self.conf = conf
         self.channel_selector = channel_selector
 
@@ -28,7 +28,6 @@ class StepWisePruner():
         self.metrics_features = ['recall', 'precision', 'map50', 'map90', 'n_params', 'init_recall', 'init_precision', 'init_map50', 'init_map90', 'init_n_params']
 
         self._layer_i = -1
-        self._model_handler = self._init_model_handler
         self.reset_state()
         #TODO call reset model     
 
@@ -37,8 +36,7 @@ class StepWisePruner():
         """ Resets the model to its original state before applying pruning and imcrements the layer counter.
         Should be called before pruning each layer.
         """
-        del self._model_handler
-        self._model_handler = self._init_model_handler
+        self._model_handler.reset_model()
         self._layer_i += 1
         self._layer = self._model_handler.prunable_layers[self._layer_i] # TODO self.prunable_layers[self._layer_i] # TODO separat func? 
 
@@ -215,12 +213,6 @@ if __name__ == "__main__":
     
     # Load model
     model_handler = ModelHandler(conf.model)
-    if conf.model.model_path is not None:
-        # TODO load model
-        pass 
-    else:        
-        model_handler.load_pretrained(type = conf.model.pretrained_type) 
-        # TODO hasattr handling
 
     # Determine prunable layers
     # TODO load model and check of metrics are same as in the generated config file

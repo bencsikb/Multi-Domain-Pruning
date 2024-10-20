@@ -8,24 +8,34 @@ import os
 from thop import profile
 from fvcore.nn import FlopCountAnalysis
 import torchvision.transforms as T
-
+import copy
 
 
 class ModelHandler:
     def __init__(self, model_conf) -> None:
-        self._model = None
+
         self._flattened_layers = []
         self._model_conf = model_conf
         self._example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
+
+        self._init_model = self._load_pretrained(self._model_conf.pretrained_type)
+        self._model = copy.deepcopy(self._init_model)
                 
     
-    def load_pretrained(self, type: str) -> None:
+    def _load_pretrained(self, type: str) -> nn.Module:
         from ultralytics import YOLOv10
 
         if type == "yolov10":
-            self._model = YOLOv10.from_pretrained('jameslahm/yolov10x')
+            model = YOLOv10.from_pretrained('jameslahm/yolov10x')
         else:
             raise ValueError(f"Model type '{type}' is not supported.")
+
+        return model
+
+    def reset_model(self) -> None:
+
+        del self._model
+        self._model = copy.deepcopy(self._init_model)
 
     
     def flatten_conv_layers(self) -> None:
@@ -54,25 +64,28 @@ class ModelHandler:
     
     def prune(self, all_indices):
 
-        self._model = self._model.model.train()
+        detmodel = self._model.model.train()
 
         device = next(self._model.parameters()).device.type
-        DG = tp.DependencyGraph().build_dependency(self._model, self._example_input.to(device))
+        DG = tp.DependencyGraph().build_dependency(detmodel, self._example_input.to(device))
 
         def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
                     pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
                     pruning_group.prune()
 
-        for i, layer in enumerate(self._prunable_layers):
+        flattened_layers = [module for module in detmodel.modules() if isinstance(module, nn.Conv2d)]
+        for i, layer in enumerate(flattened_layers[:50]):
+        #for i, layer in enumerate(self._prunable_layers):
 
             indices = all_indices[i]     
 
-            if indices is not None:   
+            if indices is not None: # and len(indices):   
                 prune_conv_layer(layer, indices)
-            
+              
             del layer
             gc.collect()
-
+        
+        self._model.model = detmodel
         
 
     def save_metrics():
@@ -83,11 +96,11 @@ class ModelHandler:
     def model(self) -> nn.Module:
         return self._model
 
-    @model.setter
-    def model(self, model: nn.Module) -> None:
-        if model is None:
-            raise ValueError("Model cannot be set to None.")
-        self._model = model # TODO deepcopy?
+    # @model.setter
+    # def model(self, model: nn.Module) -> None:
+    #     if model is None:
+    #         raise ValueError("Model cannot be set to None.")
+    #     self._model = model # TODO deepcopy?
     
     @property
     def flattened_layers(self) -> list:
