@@ -7,6 +7,7 @@ import pandas as pd
 import os
 
 from src.model.model_handler import ModelHandler
+from src.sample_handler import SampleHandler
 from pruning.channel_selection.channel_selector import ChannelSelector
 from utils.config_parser import ConfigParser
 from types import SimpleNamespace
@@ -15,21 +16,45 @@ from types import SimpleNamespace
 class StepWisePruner():
     def __init__(self, 
                  model_handler: ModelHandler, 
+                 sample_handler: SampleHandler,
                  conf: SimpleNamespace, 
                  channel_selector: ChannelSelector) -> None:
                 
         self._model_handler = model_handler
-        self._init_metrics = self._init_model_handler.evaluate()
-        #self._init_metrics = [0,0,0,0,0]
+        self._sample_handler = sample_handler
         self.conf = conf
         self.channel_selector = channel_selector
 
         self.state_features = ['in_ch', 'out_ch', 'kernel', 'stride', 'pad', 'n_pruned_ch']
-        self.metrics_features = ['recall', 'precision', 'map50', 'map90', 'n_params', 'init_recall', 'init_precision', 'init_map50', 'init_map90', 'init_n_params']
+        self.metrics_features = ['recall', 'precision', 'map50', 'map90', 'n_params']
+
+        self._init_metrics = pd.DataFrame(0, index=range(1), columns=self.metrics_features)
+        self._metrics = pd.DataFrame(0, index=range(1), columns=self.metrics_features)
+
+        self._set_init_metrics()
 
         self._layer_i = -1
         self.reset_state()
         #TODO call reset model     
+
+    def _set_init_metrics(self) -> None:
+        
+        #init_metrics = self._model_handler.evaluate()
+        init_metrics = [0,0,0,0,0]
+
+        self._init_metrics.loc[0, 'recall'] = init_metrics[0]
+        self._init_metrics.loc[0, 'precision'] = init_metrics[1]
+        self._init_metrics.loc[0, 'map50'] = init_metrics[2]
+        self._init_metrics.loc[0, 'map90'] = init_metrics[3]
+        self._init_metrics.loc[0, 'n_params'] = init_metrics[4]
+    
+    def _set_metrics(self, metrics) -> None:
+        
+        self._metrics.loc[0, 'recall'] = metrics[0]
+        self._metrics.loc[0, 'precision'] = metrics[1]
+        self._metrics.loc[0, 'map50'] = metrics[2]
+        self._metrics.loc[0, 'map90'] = metrics[3]
+        self._metrics.loc[0, 'n_params'] = metrics[4]
 
 
     def reset_model(self) -> None:
@@ -46,11 +71,11 @@ class StepWisePruner():
         Should be called before pruning the first layer.
         """
         self._layer_i = -1
-        self._metrics = self._init_metrics
+        self._metrics[self._metrics.columns] = self._init_metrics.values
         self._all_indices = [None] * self._model_handler.n_prunable_layers
-        self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features)  # torch.full([self.n_prunable_layers, conf.n_features], -1.0)
-        self._label = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features)# torch.zeros([1, 4])  # sparsity, dmap, drec, dprec
-        self._alpha_sequence = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=['alpha']) #np.full(self.n_prunable_layers, -1)           
+        self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features) 
+        self._label = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features + [col + '_init' for col in self.metrics_features])
+        self._alpha_sequence = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=['alpha'])         
 
 
     def select_indices(self) -> None:
@@ -74,7 +99,8 @@ class StepWisePruner():
         """
         # TODO metrics should be reinitialized somewhere
         if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
-            self._metrics = self._model_handler.evaluate()
+            metrics = self._model_handler.evaluate()
+            self._set_metrics()
 
 
     def update_state(self) -> None:
@@ -88,22 +114,24 @@ class StepWisePruner():
             self._model_state.loc[self._layer_i-1, 'n_pruned_ch'] = len(self._all_indices[self._layer_i-1]) 
         # TODO all other stuff
 
-    def update_label(self) -> None:
-        # Model eval
-        assert self._metrics is not None, "Metrics after pruning are missing. Function \"eval_pruned_model\" has to be called first!"
-        self._label.loc[self._layer_i, 'recall'] = self._metrics[0]
-        self._label.loc[self._layer_i, 'precision'] = self._metrics[1]
-        #self._label.loc[self._layer_i, 'f1'] = self._metrics[2]
-        self._label.loc[self._layer_i, 'map50'] = self._metrics[2]
-        self._label.loc[self._layer_i, 'map90'] = self._metrics[3]
-        self._label.loc[self._layer_i, 'n_params'] = self._metrics[4]
+    def update_label(self, is_existing_sample) -> None:
 
-        # Add init metrics
-        self._label.loc[self._layer_i, 'init_recall'] = self._init_metrics[0]
-        self._label.loc[self._layer_i, 'init_precision'] = self._init_metrics[1]
-        self._label.loc[self._layer_i, 'init_map50'] = self._init_metrics[2]
-        self._label.loc[self._layer_i, 'init_map90'] = self._init_metrics[3]
-        self._label.loc[self._layer_i, 'init_n_params'] = self._init_metrics[4]
+        if not is_existing_sample: 
+
+            self._label.loc[self._layer_i, self.metrics_features] = self._metrics.values
+            init_columns = [col + '_init' for col in self.metrics_features]
+            self._label.loc[self._layer_i, init_columns] = self._init_metrics.values.flatten()
+        
+        else:
+            saved_label_df = self._sample_handler.retrieve_sample(self.data)
+            try:
+                if self._sample_handler.check_label_equality(saved_label_df, self._init_metrics):
+                    self._label = saved_label_df
+                else:
+                    raise ValueError("Label equality check failed. The saved label DataFrame does not match the initial metrics.")
+            except Exception as e:
+                print(f"An error occurred: {e}")
+
 
     
     def fine_tune():
@@ -126,7 +154,7 @@ class StepWisePruner():
     
     @property 
     def label(self) -> pd.DataFrame:
-        return self._label #TODO normalize
+        return self._label.iloc[[self._layer_i]] #TODO normalize
 
 
 class OneShotPruner():
@@ -180,40 +208,15 @@ def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
 
 
 
-class SampleHandler():
-    def __init__(self, conf: SimpleNamespace) -> None:
-        self.samples_path = os.path.join(conf.samples.save_path, "data")
-
-        self.sample_container = set()
-    
-    def read_all_samples(self) -> None:
-
-        for filename in os.listdir(self.samples_path):
-            if filename.endswith('.pkl'):
-                data_df = pd.read_pickle(os.path.join(self.samples_path, filename))
-                self.add_sample(data_df)               
-
-    def is_existing_sample(self, data_df) -> bool:
-        sample_string = self.df_to_string(data_df)
-        return sample_string in self.sample_container
-
-    def add_sample(self, data_df) -> None:
-        sample_string = self.df_to_string(data_df)
-        self.sample_container.add(sample_string)
-
-    def df_to_string(self, df) -> str:
-        # Convert all values to a single string by flattening and concatenating
-        return ''.join(map(str, df.values.flatten()))
-
-    
-    @property
-    def n_samples(self) -> int:
-        return len(self.sample_container)
-
 
 if __name__ == "__main__":
 
     conf = ConfigParser.read("config/pruning/pruning_sampling.ini")
+
+
+    # Load the samples df and get the n_samples 
+    sample_handler = SampleHandler(conf)
+    sample_handler.read_all_samples()
     
     # Load model
     model_handler = ModelHandler(conf.model)
@@ -226,16 +229,12 @@ if __name__ == "__main__":
     prunable_layers = model_handler.prunable_layers
   
     channel_selector = ChannelSelector(conf.channel_selection)
-    pruner = StepWisePruner(model_handler, conf, channel_selector)
+    pruner = StepWisePruner(model_handler, sample_handler, conf, channel_selector)
 
     del model_handler
 
     # Get alpha PDF
     alpha_pdf = ... # generate_pdf(n_prunable_layers, len(possible_alphas))
-
-    # Load the samples df and get the n_samples 
-    sample_handler = SampleHandler(conf)
-    sample_handler.read_all_samples()
 
     while sample_handler.n_samples < conf.samples.max_samples:
 
@@ -251,10 +250,11 @@ if __name__ == "__main__":
             alpha, is_existing_sample = choose_alpha(pruner.data, i, None, conf, sample_handler)    # TODO remove sample dependency
 
             pruner.set_alpha(alpha)  
-            pruner.select_indices()              
-            pruner.prune_model()
-            pruner.eval_pruned_model()
-            pruner.update_label()            
+            pruner.select_indices()       
+            if not is_existing_sample:
+                pruner.prune_model()
+                pruner.eval_pruned_model()
+            pruner.update_label(is_existing_sample)            
             
             if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
                 print("The state already exists in the dataset.") # TODO log
@@ -270,7 +270,7 @@ if __name__ == "__main__":
 
                 pruner.data.to_pickle(data_save_path)
                 pruner.label.to_pickle(label_save_path)
-                sample_handler.add_sample(pruner.data)
+                sample_handler.add_sample(pruner.data, pruner.label)
 
 
 
