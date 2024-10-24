@@ -19,8 +19,8 @@ class StepWisePruner():
                  channel_selector: ChannelSelector) -> None:
                 
         self._model_handler = model_handler
-        #self._init_metrics = self._init_model_handler.evaluate()
-        self._init_metrics = [0,0,0,0,0]
+        self._init_metrics = self._init_model_handler.evaluate()
+        #self._init_metrics = [0,0,0,0,0]
         self.conf = conf
         self.channel_selector = channel_selector
 
@@ -137,16 +137,17 @@ class OneShotPruner():
 def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
     
     def _apply_skip_rules(conf):
-        alpha = 1.0
+
+        is_applied = False
         skipunder = getattr(conf.channel_selection, "skipunder", None)
         skipmod = getattr(conf.channel_selection, "skipmod", None)
 
         if (skipunder is not None) and (i < skipunder):
-            alpha = 0.0
+            is_applied = True
         elif (skipmod is not None) and (i % skipmod):
-            alpha = 0.0
+            is_applied = True
 
-        return alpha
+        return is_applied
 
     #TODO This sould actually go to the PDF generator
     if getattr(conf.alpha, 'value_list', None) is not None:
@@ -160,16 +161,19 @@ def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
     tried_alphas = []
     is_existing_sample = True
     while is_existing_sample:
-        alpha = _apply_skip_rules(conf)
-        if alpha != 0.0:
-            alpha = np.random.rand() #TODO  # Random value if not skipped
+
+        is_applied_skip = _apply_skip_rules(conf)
+        if is_applied_skip:
+            alpha = 0.0
+        else:
+            alpha = np.random.rand() #TODO pdf
         
         if alpha not in tried_alphas:
             tried_alphas.append(alpha)
             data_temp.loc[i, 'alpha'] = alpha  
             is_existing_sample = sample_handler.is_existing_sample(data_temp)
         
-        if len(tried_alphas) == n_possible_alphas:  
+        if (len(tried_alphas) == n_possible_alphas) or is_applied_skip:  
                 break              
 
     return alpha, is_existing_sample
@@ -244,7 +248,7 @@ if __name__ == "__main__":
             pruner.update_state()
             
             # Check if the alpha_seq exists already
-            alpha, is_existing_sample = choose_alpha(pruner.alpha_sequence, i, None, conf, sample_handler)    # TODO remove sample dependency
+            alpha, is_existing_sample = choose_alpha(pruner.data, i, None, conf, sample_handler)    # TODO remove sample dependency
 
             pruner.set_alpha(alpha)  
             pruner.select_indices()              
@@ -261,13 +265,8 @@ if __name__ == "__main__":
                 data_save_path = os.path.join(conf.samples.save_path, "data", str(sample_handler.n_samples) + ".pkl")
                 label_save_path = os.path.join(conf.samples.save_path, "label", str(sample_handler.n_samples) + ".pkl")
 
-                try:
-                    if os.path.exists(data_save_path):
-                        raise FileExistsError(f"Sample {sample_handler.n_samples} already exists at {data_save_path}!")
-                    elif os.path.exists(label_save_path):
-                        raise FileExistsError(f"Sample {sample_handler.n_samples} already exists at {label_save_path}!")
-                except FileExistsError as e:
-                    print(f"Error: {e}")
+                assert not os.path.exists(data_save_path), f"Sample {sample_handler.n_samples} already exists at {data_save_path}!"
+                assert not os.path.exists(label_save_path), f"Sample {sample_handler.n_samples} already exists at {label_save_path}!"
 
                 pruner.data.to_pickle(data_save_path)
                 pruner.label.to_pickle(label_save_path)
