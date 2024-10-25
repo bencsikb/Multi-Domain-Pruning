@@ -39,8 +39,8 @@ class StepWisePruner():
 
     def _set_init_metrics(self) -> None:
         
-        #init_metrics = self._model_handler.evaluate()
-        init_metrics = [0,0,0,0,0]
+        init_metrics = self._model_handler.evaluate()
+        #init_metrics = [0,0,0,0,0]
 
         self._init_metrics.loc[0, 'recall'] = init_metrics[0]
         self._init_metrics.loc[0, 'precision'] = init_metrics[1]
@@ -124,15 +124,9 @@ class StepWisePruner():
         
         else:
             saved_label_df = self._sample_handler.retrieve_sample(self.data)
-            try:
-                if self._sample_handler.check_label_equality(saved_label_df, self._init_metrics):
-                    self._label = saved_label_df
-                else:
-                    raise ValueError("Label equality check failed. The saved label DataFrame does not match the initial metrics.")
-            except Exception as e:
-                print(f"An error occurred: {e}")
-
-
+            assert self._sample_handler.check_label_equality(saved_label_df, self._init_metrics), (
+                "Label equality check failed. The saved label DataFrame does not match the initial metrics.")
+            self._label = saved_label_df
     
     def fine_tune():
          pass
