@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import numpy as np
 from types import SimpleNamespace
 
 
@@ -11,6 +12,7 @@ class SampleHandler():
         self.sample_container = {}
     
     def read_all_samples(self) -> None:
+        # TODO: handle exception whem only data or only label file exists
 
         for filename in os.listdir(self.data_path):
             if filename.endswith('.pkl'):
@@ -39,20 +41,19 @@ class SampleHandler():
         data_df, label_df = self.sample_container.get(sample_string, None)
         return label_df
     
-    def check_label_equality(self, ldf1, ldf2, decimals=3) -> bool:
+    def check_label_equality(self, saved_df, init_df, decimals=3) -> bool:
 
-        are_equal = True
+        saved_init_df = saved_df.filter(like='_init', axis=1)
 
-        init_columns1 = [col for col in ldf1.columns if '_init' in col]
-        init_columns2 = [col for col in ldf2.columns if '_init' in col]
-        assert set(init_columns1) == set(init_columns2), "The DataFrames do not have the same _init columns."
+        l1 = saved_init_df.to_numpy().flatten().tolist()
+        l2 = init_df.to_numpy().flatten().tolist()
 
-        for col in init_columns1:
-            if not ldf1[col].round(decimals).equals(ldf2[col].round(decimals)):
-                print(f"Mismatch found in column: {col}")
-                are_equal = False
+        assert len(l1) == len(l2), "The lists are of different lengths."
 
-        return are_equal
+        l1 = np.round(l1, decimals)
+        l2 = np.round(l2, decimals)
+
+        return np.array_equal(l1, l2)
 
     
     @property

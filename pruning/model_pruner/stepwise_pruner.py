@@ -1,16 +1,10 @@
-import torch.nn as nn
-import torch_pruning as tp
-import torch
-import gc
-import numpy as np
 import pandas as pd
-import os
 
 from src.model.model_handler import ModelHandler
 from src.sample_handler import SampleHandler
 from pruning.channel_selection.channel_selector import ChannelSelector
-from utils.config_parser import ConfigParser
 from types import SimpleNamespace
+from pruning.channel_selection.utils import choose_alpha
 
 
 class StepWisePruner():
@@ -22,8 +16,8 @@ class StepWisePruner():
                 
         self._model_handler = model_handler
         self._sample_handler = sample_handler
-        self.conf = conf
-        self.channel_selector = channel_selector
+        self._conf = conf
+        self._channel_selector = channel_selector
 
         self.state_features = ['in_ch', 'out_ch', 'kernel', 'stride', 'pad', 'n_pruned_ch']
         self.metrics_features = ['recall', 'precision', 'map50', 'map90', 'n_params']
@@ -39,8 +33,8 @@ class StepWisePruner():
 
     def _set_init_metrics(self) -> None:
         
-        init_metrics = self._model_handler.evaluate()
-        #init_metrics = [0,0,0,0,0]
+        #init_metrics = self._model_handler.evaluate()
+        init_metrics = [0,0,0,0,0]
 
         self._init_metrics.loc[0, 'recall'] = init_metrics[0]
         self._init_metrics.loc[0, 'precision'] = init_metrics[1]
@@ -81,7 +75,7 @@ class StepWisePruner():
     def select_indices(self) -> None:
         """ Select the indices to be removed from the output dimension, based on the given alpha.
         """
-        idxs = channel_selector.select_indices(self._model_handler.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
+        idxs = self._channel_selector.select_indices(self._model_handler.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
         #idxs = channel_selector.select_indices(self.flattened_conv_layers[self._layer_i], self._alpha_sequence.loc[self._layer_i, 'alpha'])
 
         self._all_indices[self._layer_i] = idxs
@@ -149,123 +143,3 @@ class StepWisePruner():
     @property 
     def label(self) -> pd.DataFrame:
         return self._label.iloc[[self._layer_i]] #TODO normalize
-
-
-class OneShotPruner():
-        def __init__(self) -> None:
-            pass
-
-
-def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
-    
-    def _apply_skip_rules(conf):
-
-        is_applied = False
-        skipunder = getattr(conf.channel_selection, "skipunder", None)
-        skipmod = getattr(conf.channel_selection, "skipmod", None)
-
-        if (skipunder is not None) and (i < skipunder):
-            is_applied = True
-        elif (skipmod is not None) and (i % skipmod):
-            is_applied = True
-
-        return is_applied
-
-    #TODO This sould actually go to the PDF generator
-    if getattr(conf.alpha, 'value_list', None) is not None:
-        possible_alphas = conf.alpha.value_list
-    else:
-        assert hasattr(conf.alpha, 'min_max_step'), "Alpha value list OR min, max, step values must be provided!"
-        possible_alphas = np.arange(conf.alpha.min_max_step[0], conf.alpha.min_max_step[1], conf.alpha.min_max_step[2])
-    n_possible_alphas = len(possible_alphas)
-
-    data_temp = data.copy()
-    tried_alphas = []
-    is_existing_sample = True
-    while is_existing_sample:
-
-        is_applied_skip = _apply_skip_rules(conf)
-        if is_applied_skip:
-            alpha = 0.0
-        else:
-            alpha = np.random.rand() #TODO pdf
-        
-        if alpha not in tried_alphas:
-            tried_alphas.append(alpha)
-            data_temp.loc[i, 'alpha'] = alpha  
-            is_existing_sample = sample_handler.is_existing_sample(data_temp)
-        
-        if (len(tried_alphas) == n_possible_alphas) or is_applied_skip:  
-                break              
-
-    return alpha, is_existing_sample
-
-
-
-
-if __name__ == "__main__":
-
-    conf = ConfigParser.read("config/pruning/pruning_sampling.ini")
-
-
-    # Load the samples df and get the n_samples 
-    sample_handler = SampleHandler(conf)
-    sample_handler.read_all_samples()
-    
-    # Load model
-    model_handler = ModelHandler(conf.model)
-
-    # Determine prunable layers
-    # TODO load model and check of metrics are same as in the generated config file
-    #metrics = []
-    model_handler.flatten_conv_layers()
-    model_handler.determine_prunable_layers()
-    prunable_layers = model_handler.prunable_layers
-  
-    channel_selector = ChannelSelector(conf.channel_selection)
-    pruner = StepWisePruner(model_handler, sample_handler, conf, channel_selector)
-
-    del model_handler
-
-    # Get alpha PDF
-    alpha_pdf = ... # generate_pdf(n_prunable_layers, len(possible_alphas))
-
-    while sample_handler.n_samples < conf.samples.max_samples:
-
-        pruner.reset_state()
-
-        for i, layer in enumerate(prunable_layers):
-
-            # Load model
-            pruner.reset_model()
-            pruner.update_state()
-            
-            # Check if the alpha_seq exists already
-            alpha, is_existing_sample = choose_alpha(pruner.data, i, None, conf, sample_handler)    # TODO remove sample dependency
-
-            pruner.set_alpha(alpha)  
-            pruner.select_indices()       
-            if not is_existing_sample:
-                pruner.prune_model()
-                pruner.eval_pruned_model()
-            pruner.update_label(is_existing_sample)            
-            
-            if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
-                print("The state already exists in the dataset.") # TODO log
-                continue
-                # load the labels and check if the saved lables are the same as metrics_after
-                # assert if not
-            else:
-                data_save_path = os.path.join(conf.samples.save_path, "data", str(sample_handler.n_samples) + ".pkl")
-                label_save_path = os.path.join(conf.samples.save_path, "label", str(sample_handler.n_samples) + ".pkl")
-
-                assert not os.path.exists(data_save_path), f"Sample {sample_handler.n_samples} already exists at {data_save_path}!"
-                assert not os.path.exists(label_save_path), f"Sample {sample_handler.n_samples} already exists at {label_save_path}!"
-
-                pruner.data.to_pickle(data_save_path)
-                pruner.label.to_pickle(label_save_path)
-                sample_handler.add_sample(pruner.data, pruner.label)
-
-
-
-        
