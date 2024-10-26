@@ -94,7 +94,7 @@ class StepWisePruner():
         # TODO metrics should be reinitialized somewhere
         if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
             metrics = self._model_handler.evaluate()
-            self._set_metrics()
+            self._set_metrics(metrics)
 
 
     def update_state(self) -> None:
@@ -120,7 +120,7 @@ class StepWisePruner():
             saved_label_df = self._sample_handler.retrieve_sample(self.data)
             assert self._sample_handler.check_label_equality(saved_label_df, self._init_metrics), (
                 "Label equality check failed. The saved label DataFrame does not match the initial metrics.")
-            self._label = saved_label_df
+            self._label.iloc[self._layer_i] = saved_label_df
     
     def fine_tune():
          pass
