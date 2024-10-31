@@ -1,4 +1,5 @@
 import numpy as np
+from pruning.channel_selection.alpha_functions import ActionFunc
 
 def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
     
@@ -10,17 +11,22 @@ def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
 
         if (skipunder is not None) and (i < skipunder):
             is_applied = True
-        elif (skipmod is not None) and (i % skipmod):
-            is_applied = True
+        elif skipmod is not None:
+
+            if not isinstance(skipmod, list):
+                skipmod = [skipmod]
+
+            for mod in skipmod:
+                if i % mod == 0:
+                    is_applied = True
+                    break 
 
         return is_applied
 
     #TODO This sould actually go to the PDF generator
-    if getattr(conf.alpha, 'value_list', None) is not None:
-        possible_alphas = conf.alpha.value_list
-    else:
-        assert hasattr(conf.alpha, 'min_max_step'), "Alpha value list OR min, max, step values must be provided!"
-        possible_alphas = np.arange(conf.alpha.min_max_step[0], conf.alpha.min_max_step[1], conf.alpha.min_max_step[2])
+    action_generator = ActionFunc(conf)
+    possible_alphas = action_generator.generate()
+    action_generator.plot_and_save()
     n_possible_alphas = len(possible_alphas)
 
     data_temp = data.copy()
