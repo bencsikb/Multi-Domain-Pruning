@@ -24,15 +24,17 @@ class ModelHandler:
     
     def _load_pretrained(self) -> nn.Module:
         from ultralytics import YOLOv10
-        from ultralytics.nn.tasks import attempt_load_one_weight
-        from ultralytics.models.yolov10.model import YOLOv10DetectionModel
 
         if self._model_conf.pretrained_type == "yolov10":
-            if self._model_conf.model_path is not None:
+            if self._model_conf.model_path is not None: 
+                from ultralytics.nn.tasks import attempt_load_one_weight
+                from ultralytics.models.yolov10.model import YOLOv10DetectionModel
+                model = YOLOv10.from_pretrained('jameslahm/yolov10x')
                 weights, ckpt = attempt_load_one_weight(self._model_conf.model_path)
                 cfg = ckpt["model"].yaml    
-                model = YOLOv10DetectionModel(cfg)
-                model.load(weights)  
+                detmodel = YOLOv10DetectionModel(cfg)
+                detmodel.load(weights)
+                model.model = copy.deepcopy(detmodel)
             else:
                 model = YOLOv10.from_pretrained('jameslahm/yolov10x')
         else:
