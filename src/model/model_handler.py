@@ -18,15 +18,23 @@ class ModelHandler:
         self._model_conf = model_conf
         self._example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
 
-        self._init_model = self._load_pretrained(self._model_conf.pretrained_type)
+        self._init_model = self._load_pretrained()
         self._model = copy.deepcopy(self._init_model)
                 
     
-    def _load_pretrained(self, type: str) -> nn.Module:
+    def _load_pretrained(self) -> nn.Module:
         from ultralytics import YOLOv10
+        from ultralytics.nn.tasks import attempt_load_one_weight
+        from ultralytics.models.yolov10.model import YOLOv10DetectionModel
 
-        if type == "yolov10":
-            model = YOLOv10.from_pretrained('jameslahm/yolov10x')
+        if self._model_conf.pretrained_type == "yolov10":
+            if self._model_conf.model_path is not None:
+                weights, ckpt = attempt_load_one_weight(self._model_conf.model_path)
+                cfg = ckpt["model"].yaml    
+                model = YOLOv10DetectionModel(cfg)
+                model.load(weights)  
+            else:
+                model = YOLOv10.from_pretrained('jameslahm/yolov10x')
         else:
             raise ValueError(f"Model type '{type}' is not supported.")
 
