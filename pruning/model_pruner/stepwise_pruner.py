@@ -33,8 +33,8 @@ class StepWisePruner():
 
     def _set_init_metrics(self) -> None:
         
-        #init_metrics = self._model_handler.evaluate()
-        init_metrics = [0,0,0,0,0]
+        init_metrics = self._model_handler.evaluate()
+        #init_metrics = [0,0,0,0,0]
 
         self._init_metrics.loc[0, 'recall'] = init_metrics[0]
         self._init_metrics.loc[0, 'precision'] = init_metrics[1]

@@ -6,7 +6,7 @@ import gc
 import sys
 import os
 from thop import profile
-from fvcore.nn import FlopCountAnalysis
+#from fvcore.nn import FlopCountAnalysis
 import torchvision.transforms as T
 import copy
 
@@ -29,7 +29,8 @@ class ModelHandler:
             if self._model_conf.model_path is not None: 
                 from ultralytics.nn.tasks import attempt_load_one_weight
                 from ultralytics.models.yolov10.model import YOLOv10DetectionModel
-                model = YOLOv10.from_pretrained('jameslahm/yolov10x')
+
+                model = YOLOv10('yolov10n.yaml')
                 weights, ckpt = attempt_load_one_weight(self._model_conf.model_path)
                 cfg = ckpt["model"].yaml    
                 detmodel = YOLOv10DetectionModel(cfg)
