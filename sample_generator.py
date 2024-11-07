@@ -6,6 +6,7 @@ from utils.config_parser import ConfigParser
 from pruning.channel_selection.channel_selector import ChannelSelector
 from pruning.channel_selection.utils import choose_alpha
 from pruning.model_pruner.stepwise_pruner import StepWisePruner
+from pruning.channel_selection.alpha_functions import ActionFunc
 
 
 if __name__ == "__main__":
@@ -34,6 +35,8 @@ if __name__ == "__main__":
 
     # Get alpha PDF
     alpha_pdf = ... # generate_pdf(n_prunable_layers, len(possible_alphas))
+    action_generator = ActionFunc(conf)
+    action_generator.plot_and_save()
 
     while sample_handler.n_samples < conf.samples.max_samples:
 
@@ -46,7 +49,7 @@ if __name__ == "__main__":
             pruner.update_state()
             
             # Check if the alpha_seq exists already
-            alpha, is_existing_sample = choose_alpha(pruner.data, i, None, conf, sample_handler)    # TODO remove sample dependency
+            alpha, is_existing_sample = choose_alpha(pruner.data, i, action_generator, conf, sample_handler)    # TODO remove sample dependency
 
             pruner.set_alpha(alpha)  
             pruner.select_indices()       
@@ -56,7 +59,7 @@ if __name__ == "__main__":
             pruner.update_label(is_existing_sample)            
             
             if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
-                print("The state already exists in the dataset.") # TODO log
+                print("The state already exists in the dataset. Keeping only for later use.") # TODO log
                 continue
                 # load the labels and check if the saved lables are the same as metrics_after
                 # assert if not

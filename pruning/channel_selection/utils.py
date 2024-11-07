@@ -1,7 +1,6 @@
 import numpy as np
-from pruning.channel_selection.alpha_functions import ActionFunc
 
-def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
+def choose_alpha(data, i, action_generator, conf, sample_handler):
     
     def _apply_skip_rules(conf):
 
@@ -24,9 +23,7 @@ def choose_alpha(data, i, alpha_pdf, conf, sample_handler):
         return is_applied
 
     #TODO This sould actually go to the PDF generator
-    action_generator = ActionFunc(conf)
-    possible_alphas = action_generator.generate()
-    action_generator.plot_and_save()
+    possible_alphas = action_generator.alphas
     n_possible_alphas = len(possible_alphas)
 
     data_temp = data.copy()

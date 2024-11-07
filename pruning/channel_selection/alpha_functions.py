@@ -26,8 +26,10 @@ class ActionFunc:
         else:
             print(f"The selected action function '{scale}' is not implemented. Please select from [lin, half_sigmoid].")
             sys.exit(1)
+        
+        self._alphas = self._generate()
 
-    def generate(self) -> list:
+    def _generate(self) -> list:
         """Delegates to the appropriate action function's generate method."""
         if self.action_func:
             return self.action_func.generate(self.min, self.max, self.n_steps)
@@ -37,7 +39,7 @@ class ActionFunc:
     
     def plot_and_save(self, filename="plot.png"):
         """Generates the values, plots them, and saves the plot to a file."""
-        values = self.generate()
+        values = self._alphas
         plt.figure(figsize=(8, 5))
         plt.plot(values, marker="o", linestyle="-")
         plt.title("Generated Sequence Plot")
@@ -47,6 +49,10 @@ class ActionFunc:
         plt.savefig(filename)
         plt.close()
         print(f"Plot saved as {filename}")
+    
+    @property
+    def alphas(self):
+        return self._alphas
 
 
 class LinspaceAction:
