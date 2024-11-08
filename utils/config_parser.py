@@ -6,6 +6,7 @@ import configparser as cp
 from types import SimpleNamespace
 from datetime import datetime as dt
 from typing import Dict, List, Optional
+import logging
 
 
 class ConfigParser:
@@ -84,7 +85,7 @@ class ConfigParser:
         with open(new_file_path, "w") as f:
             config.write(f)
 
-        print(f"Configuration saved as {new_file_path}")
+        logging.info(f"Configuration saved as {new_file_path}")
 
     # Private methods
 

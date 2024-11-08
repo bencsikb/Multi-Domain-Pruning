@@ -1,4 +1,5 @@
 import os
+import logging
 
 from src.model.model_handler import ModelHandler
 from src.sample_handler import SampleHandler
@@ -14,6 +15,16 @@ if __name__ == "__main__":
     # Read and save config file
     conf = ConfigParser.read("config/pruning/pruning_sampling.ini")
     ConfigParser.save(conf, os.path.join(conf.samples.save_path, "settings.ini"))
+
+    # Set up logging 
+    log_file_path = os.path.join(conf.samples.save_path, "log.txt")
+    logging.basicConfig(
+        filename=log_file_path,
+        filemode='a',  
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        level=logging.INFO,
+        force=True
+        )
 
     # Load the samples df and get the n_samples 
     sample_handler = SampleHandler(conf)
@@ -44,6 +55,7 @@ if __name__ == "__main__":
         pruner.reset_state()
 
         for i, layer in enumerate(prunable_layers):
+            logging.info(f"Sample {sample_handler.n_samples}, layer {i}")
 
             # Load model
             pruner.reset_model()
@@ -60,7 +72,7 @@ if __name__ == "__main__":
             pruner.update_label(is_existing_sample)            
             
             if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
-                print("The state already exists in the dataset. Keeping only for later use.") # TODO log
+                logging.info("The state already exists in the dataset. Keeping only for later use.") 
                 continue
                 # load the labels and check if the saved lables are the same as metrics_after
                 # assert if not

@@ -2,6 +2,7 @@ import pandas as pd
 import os
 import numpy as np
 from types import SimpleNamespace
+import logging
 
 
 class SampleHandler():
@@ -29,7 +30,7 @@ class SampleHandler():
         if sample_string not in self.sample_container:
             self.sample_container[sample_string] = (data_df, label_df)
         else:
-            print(f"Sample already exists!")
+            logging.warning("Sample already exists in the sample_handler!")
    
 
     def is_existing_sample(self, data_df) -> bool:

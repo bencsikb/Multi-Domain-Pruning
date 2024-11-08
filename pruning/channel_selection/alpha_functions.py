@@ -2,6 +2,7 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import logging
 
 
 class ActionFunc:
@@ -65,7 +66,7 @@ class ActionFunc:
         # Save the plot
         plt.savefig(os.path.join(base_path, new_filename))
         plt.close()
-        print(f"Plot saved as {new_filename}")
+        logging.info(f"Plot saved as {new_filename}")
     
     @property
     def alphas(self):
