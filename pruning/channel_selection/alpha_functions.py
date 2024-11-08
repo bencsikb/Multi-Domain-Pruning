@@ -1,6 +1,7 @@
 import sys
 import matplotlib.pyplot as plt
 import numpy as np
+import os
 
 
 class ActionFunc:
@@ -11,7 +12,8 @@ class ActionFunc:
         
         scale = conf.alpha.scale
         min_max_steps = conf.alpha.min_max_steps
-        self.min, self.max, self.n_steps = min_max_steps  # Unpack min, max, n_steps
+        self._min, self._max, self._n_steps = min_max_steps  # Unpack min, max, n_steps
+        self._conf = conf
 
         # Choose the action function based on `scale`
         if getattr(conf.alpha, 'value_list', None) is not None:
@@ -32,13 +34,16 @@ class ActionFunc:
     def _generate(self) -> list:
         """Delegates to the appropriate action function's generate method."""
         if self.action_func:
-            return self.action_func.generate(self.min, self.max, self.n_steps)
+            return self.action_func.generate(self._min, self._max, self._n_steps)
         else:
             return self.possible_alphas  
     
     
-    def plot_and_save(self, filename="plot.png"):
-        """Generates the values, plots them, and saves the plot to a file."""
+    def plot_and_save(self, filename="action_func.png"):
+        """ Plots the alpha values and saves the plot to a file.
+            If the plot already exists with the given name, adds an int to the filename.            
+        """
+
         values = self._alphas
         plt.figure(figsize=(8, 5))
         plt.plot(values, marker="o", linestyle="-")
@@ -46,9 +51,21 @@ class ActionFunc:
         plt.xlabel("Step Index")
         plt.ylabel("Value")
         plt.grid(True)
-        plt.savefig(filename)
+
+        # Check if the file already exists and modify the filename if necessary
+        base_path = self._conf.samples.save_path
+        base_filename, file_extension = os.path.splitext(filename)
+        counter = 1
+        new_filename = filename
+
+        while os.path.exists(os.path.join(base_path, new_filename)):
+            new_filename = f"{base_filename}_{counter}{file_extension}"
+            counter += 1
+
+        # Save the plot
+        plt.savefig(os.path.join(base_path, new_filename))
         plt.close()
-        print(f"Plot saved as {filename}")
+        print(f"Plot saved as {new_filename}")
     
     @property
     def alphas(self):
