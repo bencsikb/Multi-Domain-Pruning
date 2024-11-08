@@ -84,9 +84,19 @@ class ModelHandler:
                     pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
                     pruning_group.prune()
 
-        flattened_layers = [module for module in detmodel.modules() if isinstance(module, nn.Conv2d)]
-        for i, layer in enumerate(flattened_layers[:50]):
-        #for i, layer in enumerate(self._prunable_layers):
+
+        # Determine prunable layers: check if they are in the self._prunable_layers list
+        prunable_layers = [module for module in detmodel.modules()
+                            if any(
+                                module is prunable_layer or (
+                                    isinstance(module, type(prunable_layer)) and
+                                    all(torch.equal(a, b) for a, b in zip(module.state_dict().values(), prunable_layer.state_dict().values()))
+                                )
+                                for prunable_layer in self._prunable_layers
+                            )]
+
+
+        for i, layer in enumerate(prunable_layers):
 
             indices = all_indices[i]     
 
