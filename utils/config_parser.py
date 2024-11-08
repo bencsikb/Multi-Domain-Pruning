@@ -61,8 +61,18 @@ class ConfigParser:
     @classmethod
     def save(cls, conf: SimpleNamespace, file_path: str) -> None:
         """
-        Save configuration SimpleNamespace to file.
+        Save configuration SimpleNamespace to file, ensuring a unique filename.
         """
+        # Ensure the filename is unique
+        base_path, file_extension = os.path.splitext(file_path)
+        counter = 1
+        new_file_path = file_path
+
+        while os.path.exists(new_file_path):
+            new_file_path = f"{base_path}_{counter}{file_extension}"
+            counter += 1
+
+        # Create a ConfigParser object
         config = cp.ConfigParser()
         for section, variables in conf.__dict__.items():
             config[section] = {}
@@ -70,20 +80,11 @@ class ConfigParser:
                 data = f"'{value}'" if isinstance(value, str) else str(value)
                 config[section][name] = data
 
-        # Delete excluded sections
-        for section in cls.exluded_sections:
-            try:
-                if section == "notifier":
-                    if section in config._sections:
-                        del config._sections[section]
-                    else:
-                        print(f'Skipping section "{section}" because it is optional and does not exist in the configuration.')
-                else:
-                    del config._sections[section]
-            except KeyError:
-                raise KeyError(f'Unknown section name in excluded sections: "{section}"') from None
-        with open(file_path, "w") as f:
+        # Save the configuration to a file
+        with open(new_file_path, "w") as f:
             config.write(f)
+
+        print(f"Configuration saved as {new_file_path}")
 
     # Private methods
 

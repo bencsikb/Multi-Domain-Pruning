@@ -11,8 +11,9 @@ from pruning.channel_selection.alpha_functions import ActionFunc
 
 if __name__ == "__main__":
 
+    # Read and save config file
     conf = ConfigParser.read("config/pruning/pruning_sampling.ini")
-
+    ConfigParser.save(conf, os.path.join(conf.samples.save_path, "settings.ini"))
 
     # Load the samples df and get the n_samples 
     sample_handler = SampleHandler(conf)
