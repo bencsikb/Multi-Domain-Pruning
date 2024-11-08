@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 
 from src.model.model_handler import ModelHandler
 from src.sample_handler import SampleHandler
@@ -22,8 +23,8 @@ class StepWisePruner():
         self.state_features = ['in_ch', 'out_ch', 'kernel', 'stride', 'pad', 'n_pruned_ch']
         self.metrics_features = ['recall', 'precision', 'map50', 'map90', 'n_params']
 
-        self._init_metrics = pd.DataFrame(0, index=range(1), columns=self.metrics_features)
-        self._metrics = pd.DataFrame(0, index=range(1), columns=self.metrics_features)
+        self._init_metrics = pd.DataFrame(0.0, index=range(1), columns=self.metrics_features)
+        self._metrics = pd.DataFrame(0.0, index=range(1), columns=self.metrics_features)
 
         self._set_init_metrics()
 
@@ -34,7 +35,7 @@ class StepWisePruner():
     def _set_init_metrics(self) -> None:
         
         init_metrics = self._model_handler.evaluate()
-        #init_metrics = [0,0,0,0,0]
+        #init_metrics = [0.0,0.0,0.0,0.0,0.0]
 
         self._init_metrics.loc[0, 'recall'] = init_metrics[0]
         self._init_metrics.loc[0, 'precision'] = init_metrics[1]
@@ -68,8 +69,8 @@ class StepWisePruner():
         self._metrics[self._metrics.columns] = self._init_metrics.values
         self._all_indices = [None] * self._model_handler.n_prunable_layers
         self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features) 
-        self._label = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features + [col + '_init' for col in self.metrics_features])
-        self._alpha_sequence = pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=['alpha'])         
+        self._label = pd.DataFrame(0.0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features + [col + '_init' for col in self.metrics_features])
+        self._alpha_sequence = pd.DataFrame(0.0, index=range(self._model_handler.n_prunable_layers), columns=['alpha'])         
 
 
     def select_indices(self) -> None:
