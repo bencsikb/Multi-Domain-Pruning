@@ -3,6 +3,7 @@ import logging
 
 from src.model.model_handler import ModelHandler
 from src.sample_handler import SampleHandler
+from src.action_handler import ActionHandler
 from utils.config_parser import ConfigParser
 from pruning.channel_selection.channel_selector import ChannelSelector
 from pruning.channel_selection.utils import choose_alpha
@@ -45,10 +46,10 @@ if __name__ == "__main__":
 
     del model_handler
 
-    # Get alpha PDF
-    alpha_pdf = ... # generate_pdf(n_prunable_layers, len(possible_alphas))
-    action_generator = ActionFunc(conf)
-    action_generator.plot_and_save()
+    # Define Action handler
+    action_handler = ActionHandler(conf)
+    action_handler.define_alpha_list(to_save=True)
+    action_handler.define_alpha_pdfs(to_save=True)
 
     while sample_handler.n_samples < conf.samples.max_samples:
 
@@ -62,8 +63,8 @@ if __name__ == "__main__":
             pruner.update_state()
             
             # Check if the alpha_seq exists already
-            alpha, is_existing_sample = choose_alpha(pruner.data, i, action_generator, conf, sample_handler)    # TODO remove sample dependency
-
+            alpha, is_existing_sample = action_handler.choose_alpha(i, pruner.data, sample_handler)
+            
             pruner.set_alpha(alpha)  
             pruner.select_indices()       
             if not is_existing_sample:

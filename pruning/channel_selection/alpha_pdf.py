@@ -1,5 +1,6 @@
 
 import numpy as np
+import os
 import matplotlib.pyplot as plt
 
 
@@ -42,13 +43,9 @@ class PDFGenerator:
     def sample_from_pdf(self, i):
         """Sample based on the precomputed probabilities in the pdf. """
 
-        distribution = []
-
-        chosen_value = np.random.choice(self._values, p=self._pdf_list[i])
-        distribution.append(chosen_value)
-
-        return distribution
+        return  np.random.choice(self._values, p=self._pdf_list[i])
     
+
     def plot_and_save(self, path):
             # Base filename and extension
             base_filename = "alpha_pdf.png"
