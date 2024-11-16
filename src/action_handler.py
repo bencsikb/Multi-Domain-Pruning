@@ -34,10 +34,11 @@ class ActionHandler:
         self._pdf_generator = pdf_generator
 
 
-    def choose_alpha(self, layer_idx,  data, sample_handler) -> float:
+    def choose_alpha(self, layer_idx,  data=None, sample_handler=None) -> float:
         """ Choose an alpha value from the possible values list, based on the PDF defined for the given layer.
             Check the skip rules, and select alpha = 0 if any skip ruke is applied for the layer.
-            Check if the data sample with the selected alpha already exists, and repeat until finding a non-existinig sample. 
+            If data and sample_handler are set: Check if the data sample with the selected alpha already exists, and repeat until finding a non-existinig sample. 
+                                                Otherwise, just return the first sampled alpha.
 
         Returns:
             alpha (float): rounded to 2 decimals
@@ -47,24 +48,28 @@ class ActionHandler:
 
         n_possible_alphas = len(self._possible_alphas)
 
-        data_temp = data.copy()
-        tried_alphas = []
-        is_existing_sample = True
-        while is_existing_sample:
+        is_applied_skip = self._apply_skip_rules(layer_idx)
 
-            is_applied_skip = self._apply_skip_rules(layer_idx)
-            if is_applied_skip:
-                alpha = 0.0
-            else:
-                alpha = self._pdf_generator.sample_from_pdf(layer_idx)
-            
-            if alpha not in tried_alphas:
-                tried_alphas.append(alpha)
-                data_temp.loc[layer_idx, 'alpha'] = alpha  
-                is_existing_sample = sample_handler.is_existing_sample(data_temp)
-            
-            if (len(tried_alphas) == n_possible_alphas) or is_applied_skip:  
-                    break              
+        if (data is not None) and (sample_handler is not None): 
+            data_temp = data.copy()
+            tried_alphas = []
+            is_existing_sample = True
+            while is_existing_sample:
+
+                alpha = 0.0 if is_applied_skip else self._pdf_generator.sample_from_pdf(layer_idx)
+
+                if alpha not in tried_alphas:
+                    tried_alphas.append(alpha)
+                    data_temp.loc[layer_idx, 'alpha'] = alpha  
+                    is_existing_sample = sample_handler.is_existing_sample(data_temp)
+                
+                if (len(tried_alphas) == n_possible_alphas) or is_applied_skip:  
+                        break 
+        else: 
+
+            alpha = 0.0 if is_applied_skip else self._pdf_generator.sample_from_pdf(layer_idx)
+            is_existing_sample = None
+           
 
         return alpha, is_existing_sample
     
