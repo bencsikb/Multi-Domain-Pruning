@@ -16,6 +16,7 @@ class ModelHandler:
 
         self._flattened_layers = []
         self._model_conf = model_conf
+        self._device = model_conf.device
         self._example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
 
         self._init_model = self._load_pretrained()
@@ -41,7 +42,7 @@ class ModelHandler:
         else:
             raise ValueError(f"Model type '{type}' is not supported.")
 
-        return model
+        return model.to(self._device)
 
     def reset_model(self) -> None:
 
@@ -64,7 +65,7 @@ class ModelHandler:
 
     def evaluate(self) -> list:
 
-        prec_metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size)
+        prec_metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size, plots=None)
         
         M_params = sum(p.numel() for p in self._model.parameters()) / 1e6
         # TODO calculate flops
@@ -134,6 +135,10 @@ class ModelHandler:
     @property
     def n_prunable_layers(self) -> int:
         return len(self._prunable_layers)
+    
+    @property
+    def device(self) -> str:
+        return self._device
 
     
 
