@@ -47,7 +47,7 @@ if __name__ == "__main__":
     del model_handler
 
     # Define Action handler
-    action_handler = ActionHandler(conf)
+    action_handler = ActionHandler(conf, len(prunable_layers))
     action_handler.define_alpha_list(to_save=True)
     action_handler.define_alpha_pdfs(to_save=True)
 
@@ -56,7 +56,6 @@ if __name__ == "__main__":
         pruner.reset_state()
 
         for i, layer in enumerate(prunable_layers):
-            logging.info(f"Sample {sample_handler.n_samples}, layer {i}")
 
             # Load model
             pruner.reset_model()
@@ -65,6 +64,9 @@ if __name__ == "__main__":
             # Check if the alpha_seq exists already
             alpha, is_existing_sample = action_handler.choose_alpha(i, pruner.data, sample_handler)
             
+            # Logging
+            logging.info(f"Sample {sample_handler.n_samples}, layer {i}, alpha = {alpha}")
+
             pruner.set_alpha(alpha)  
             pruner.select_indices()       
             if not is_existing_sample:

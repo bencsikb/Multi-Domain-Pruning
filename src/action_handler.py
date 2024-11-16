@@ -1,5 +1,5 @@
 import numpy as np
-
+import logging
 
 from types import SimpleNamespace
 from pruning.channel_selection.alpha_functions import ActionFunc
@@ -20,17 +20,16 @@ class ActionHandler:
 
         action_generator = ActionFunc(self._conf)
         if to_save:
-            action_generator.plot_and_save()
+            action_generator.plot_and_save(self._conf.samples.save_path)
 
         self._possible_alphas = action_generator.alphas
     
 
     def define_alpha_pdfs(self, to_save=False) -> None:
         
-        n_alphas = len(self._possible_alphas)
-        pdf_generator = PDFGenerator(self._n_prunable_layers, n_alphas, transition_index=self._conf.alphas.pdf_trans_index, factor=self._conf.alphas.pdf_factor)
+        pdf_generator = PDFGenerator(self._n_prunable_layers, self._possible_alphas, transition_index=self._conf.alpha.pdf_trans_index, factor=self._conf.alpha.pdf_factor)
         if to_save:
-            pdf_generator.plot_and_save()
+            pdf_generator.plot_and_save(self._conf.samples.save_path)
 
         self._pdf_generator = pdf_generator
 
@@ -76,7 +75,7 @@ class ActionHandler:
         skipunder = getattr(self._conf.channel_selection, "skipunder", None)
         skipmod = getattr(self._conf.channel_selection, "skipmod", None)
 
-        if (skipunder is not None) and (i < skipunder):
+        if (skipunder is not None) and (layer_idx < skipunder):
             is_applied = True
         elif skipmod is not None:
 

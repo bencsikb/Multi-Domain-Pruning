@@ -23,7 +23,6 @@ class PDFGenerator:
         """
         pdf_list = []
         for i in range(self._n):
-            scale = i / (self._n - 1)
 
             if i < self._transition_index:
                 probs = [0.95] + [0.05 / (len(self._values) - 1)] * (len(self._values) - 1)
@@ -73,4 +72,4 @@ class PDFGenerator:
             # Save the plot
             plt.savefig(file_path)
             plt.close()
-            print(f"Plot saved as {file_path}")
+            print(f"Alpha PDF plot saved to {file_path}")

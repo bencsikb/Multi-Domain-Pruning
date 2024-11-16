@@ -40,10 +40,22 @@ class ActionFunc:
             return self.possible_alphas  
     
     
-    def plot_and_save(self, filename="action_func.png"):
+    def plot_and_save(self, path):
         """ Plots the alpha values and saves the plot to a file.
             If the plot already exists with the given name, adds an int to the filename.            
         """
+
+        base_filename = "alpha_curve.png"
+        file_path = os.path.join(path, base_filename)
+
+        # Check if the file already exists, and if so, add a number to the filename
+        if os.path.exists(file_path):
+            base_name, ext = os.path.splitext(base_filename)
+            counter = 1
+            while os.path.exists(file_path):
+                file_path = os.path.join(path, f"{base_name}_{counter}{ext}")
+                counter += 1
+
 
         values = self._alphas
         plt.figure(figsize=(8, 5))
@@ -52,21 +64,11 @@ class ActionFunc:
         plt.xlabel("Step Index")
         plt.ylabel("Value")
         plt.grid(True)
-
-        # Check if the file already exists and modify the filename if necessary
-        base_path = self._conf.samples.save_path
-        base_filename, file_extension = os.path.splitext(filename)
-        counter = 1
-        new_filename = filename
-
-        while os.path.exists(os.path.join(base_path, new_filename)):
-            new_filename = f"{base_filename}_{counter}{file_extension}"
-            counter += 1
-
+   
         # Save the plot
-        plt.savefig(os.path.join(base_path, new_filename))
+        plt.savefig(file_path)
         plt.close()
-        logging.info(f"Plot saved as {new_filename}")
+        logging.info(f"Alpha function plot saved to {file_path}")
     
     @property
     def alphas(self):
