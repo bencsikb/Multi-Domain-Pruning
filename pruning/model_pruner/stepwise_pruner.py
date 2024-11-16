@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import logging
 
 from src.model.model_handler import ModelHandler
 from src.sample_handler import SampleHandler
@@ -35,6 +36,7 @@ class StepWisePruner():
     def _set_init_metrics(self) -> None:
         
         init_metrics = self._model_handler.evaluate()
+        logging.info(f"Init_metrics: {init_metrics}")
         #init_metrics = [0.0,0.0,0.0,0.0,0.0]
 
         self._init_metrics.loc[0, 'recall'] = init_metrics[0]
@@ -96,6 +98,7 @@ class StepWisePruner():
         if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
             metrics = self._model_handler.evaluate()
             self._set_metrics(metrics)
+            logging.info(f"Metrics: {metrics}")
 
 
     def update_state(self) -> None:
@@ -127,9 +130,6 @@ class StepWisePruner():
          pass
 
     def set_alpha(self, alpha) -> None:
-        #if self.last_set_alpha + 1 != i:
-        #    assert "TODO"
-        #else:
         self._alpha_sequence.loc[self._layer_i, 'alpha'] = alpha # TODO normalize
     
     @property

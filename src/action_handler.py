@@ -57,6 +57,7 @@ class ActionHandler:
             while is_existing_sample:
 
                 alpha = 0.0 if is_applied_skip else self._pdf_generator.sample_from_pdf(layer_idx)
+                if is_applied_skip: logging.info("Skiprule applied.")
 
                 if alpha not in tried_alphas:
                     tried_alphas.append(alpha)
