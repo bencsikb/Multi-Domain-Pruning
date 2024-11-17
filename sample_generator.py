@@ -70,8 +70,14 @@ if __name__ == "__main__":
             pruner.set_alpha(alpha)  
             pruner.select_indices()       
             if not is_existing_sample:
-                pruner.prune_model()
-                pruner.eval_pruned_model()
+                try:
+                    pruner.prune_model()
+                    pruner.eval_pruned_model()
+                except:
+                    alpha, is_existing_sample = action_handler.force_zero()
+                    pruner.revoke_action(alpha)
+                    logging.info("ACTION REVOKED: Layer shape mismatch after pruning -> alpha is set to 0.0")
+
             pruner.update_label(is_existing_sample)            
             
             if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
