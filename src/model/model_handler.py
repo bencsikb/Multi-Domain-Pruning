@@ -24,7 +24,7 @@ class ModelHandler:
                 
     
     def _load_pretrained(self) -> nn.Module:
-        from ultralytics import YOLOv10
+        from ultralytics import YOLOv10, YOLO
 
         if self._model_conf.pretrained_type == "yolov10":
             if self._model_conf.model_path is not None: 
@@ -39,6 +39,10 @@ class ModelHandler:
                 model.model = copy.deepcopy(detmodel)
             else:
                 model = YOLOv10.from_pretrained('jameslahm/yolov10x')
+
+        elif self._model_conf.pretrained_type == "yolov8":
+
+                model = YOLO('yolov8x.pt') 
         else:
             raise ValueError(f"Model type '{type}' is not supported.")
 
