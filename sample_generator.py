@@ -57,6 +57,9 @@ if __name__ == "__main__":
 
         for i, layer in enumerate(prunable_layers):
 
+            # Logging
+            logging.info(f"Sample {sample_handler.n_samples}, layer {i}")
+
             # Load model
             pruner.reset_model()
             pruner.update_state()
@@ -64,19 +67,17 @@ if __name__ == "__main__":
             # Check if the alpha_seq exists already
             alpha, is_existing_sample = action_handler.choose_alpha(i, pruner.data, sample_handler)
             
-            # Logging
-            logging.info(f"Sample {sample_handler.n_samples}, layer {i}, alpha = {alpha}")
-
             pruner.set_alpha(alpha)  
             pruner.select_indices()       
             if not is_existing_sample:
                 try:
                     pruner.prune_model()
                     pruner.eval_pruned_model()
-                except:
-                    alpha, is_existing_sample = action_handler.force_zero()
+                except Exception as e:
+                    alpha, is_existing_sample = action_handler.force_zero(i, pruner.data, sample_handler)
                     pruner.revoke_action(alpha)
-                    logging.info("ACTION REVOKED: Layer shape mismatch after pruning -> alpha is set to 0.0")
+                    logging.info(f"Error: {e}\nACTION REVOKED: Layer shape mismatch after pruning -> alpha is set to 0.0")
+           
 
             pruner.update_label(is_existing_sample)            
             

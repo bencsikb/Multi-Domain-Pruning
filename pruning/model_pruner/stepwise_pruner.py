@@ -37,7 +37,6 @@ class StepWisePruner():
         
         init_metrics = self._model_handler.evaluate()
         logging.info(f"Init_metrics: {init_metrics}")
-        #init_metrics = [0.0,0.0,0.0,0.0,0.0]
 
         self._init_metrics.loc[0, 'recall'] = init_metrics[0]
         self._init_metrics.loc[0, 'precision'] = init_metrics[1]
@@ -79,9 +78,8 @@ class StepWisePruner():
         """ Select the indices to be removed from the output dimension, based on the given alpha.
         """
         idxs = self._channel_selector.select_indices(self._model_handler.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
-        #idxs = channel_selector.select_indices(self.flattened_conv_layers[self._layer_i], self._alpha_sequence.loc[self._layer_i, 'alpha'])
-
         self._all_indices[self._layer_i] = idxs
+        logging.info(f"{len(idxs)} / {self._model_handler.prunable_layers[self._layer_i].out_channels} channels will be removed.")
    
 
     def prune_model(self) -> None:   
@@ -131,8 +129,7 @@ class StepWisePruner():
             In that case alpha will be changed to 0.0, and the corresponding selected_indices will be removed.
         """
 
-        # TODO assert alpha != 0.0 ...     
-
+        assert alpha == 0.0, "Alpha must be zero if revoke_action is called!"
 
         self.set_alpha(alpha)
         self.select_indices()
