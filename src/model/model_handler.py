@@ -31,7 +31,7 @@ class ModelHandler:
                 from ultralytics.nn.tasks import attempt_load_one_weight
                 from ultralytics.models.yolov10.model import YOLOv10DetectionModel
 
-                model = YOLOv10('yolov10n.yaml')
+                model = YOLOv10('yolov10n.yaml') #TODO why n? check!
                 weights, ckpt = attempt_load_one_weight(self._model_conf.model_path)
                 cfg = ckpt["model"].yaml    
                 detmodel = YOLOv10DetectionModel(cfg)
@@ -81,6 +81,9 @@ class ModelHandler:
     def prune(self, all_indices):
 
         detmodel = self._model.model.train()
+
+        for name, param in detmodel.model.named_parameters():
+            param.requires_grad = True 
 
         device = next(self._model.parameters()).device.type
         DG = tp.DependencyGraph().build_dependency(detmodel, self._example_input.to(device))
