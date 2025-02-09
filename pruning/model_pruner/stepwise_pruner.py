@@ -57,7 +57,7 @@ class StepWisePruner():
         """ Resets the model to its original state before applying pruning and imcrements the layer counter.
         Should be called before pruning each layer.
         """
-        self._model_handler.reset_model()
+        # self._model_handler.reset_model()
         self._layer_i += 1
         self._layer = self._model_handler.prunable_layers[self._layer_i] # TODO self.prunable_layers[self._layer_i] # TODO separat func? 
 
@@ -66,6 +66,7 @@ class StepWisePruner():
         """ Resets the state and labels.
         Should be called before pruning the first layer.
         """
+        self._model_handler.reset_model()
         self._layer_i = -1
         self._metrics[self._metrics.columns] = self._init_metrics.values
         self._all_indices = [None] * self._model_handler.n_prunable_layers
@@ -86,7 +87,8 @@ class StepWisePruner():
         """ Prunes the initial model by calling the model_handler's prune function.
         """
         if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]: # prune only if there is sth to prune
-            self._model_handler.prune(self._all_indices)
+            self._model_handler.prune(self._all_indices, self._layer_i)
+            self._model_handler.determine_prunable_layers()
     
 
     def eval_pruned_model(self) -> None:

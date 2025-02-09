@@ -36,18 +36,13 @@ if __name__ == "__main__":
 
     # Determine prunable layers
     # TODO load model and check of metrics are same as in the generated config file
-    #metrics = []
-    model_handler.flatten_conv_layers()
     model_handler.determine_prunable_layers()
-    prunable_layers = model_handler.prunable_layers
   
     channel_selector = ChannelSelector(conf.channel_selection)
     pruner = StepWisePruner(model_handler, sample_handler, conf, channel_selector)
 
-    del model_handler
-
     # Define Action handler
-    action_handler = ActionHandler(conf, len(prunable_layers))
+    action_handler = ActionHandler(conf, len(model_handler.prunable_layers))
     action_handler.define_alpha_list(to_save=True)
     action_handler.define_alpha_pdfs(to_save=True)
 
@@ -55,7 +50,7 @@ if __name__ == "__main__":
 
         pruner.reset_state()
 
-        for i, layer in enumerate(prunable_layers):
+        for i, layer in enumerate(model_handler.prunable_layers):
 
             # Logging
             logging.info(f"Sample {sample_handler.n_samples}, layer {i}")
@@ -70,15 +65,9 @@ if __name__ == "__main__":
             pruner.set_alpha(alpha)  
             pruner.select_indices()       
             if not is_existing_sample:
-                try:
-                    pruner.prune_model()
-                    pruner.eval_pruned_model()
-                except Exception as e:
-                    alpha, is_existing_sample = action_handler.force_zero(i, pruner.data, sample_handler)
-                    pruner.revoke_action(alpha)
-                    logging.info(f"Error: {e}\nACTION REVOKED: Layer shape mismatch after pruning -> alpha is set to 0.0")
-           
-
+                pruner.prune_model()
+                pruner.eval_pruned_model()
+                
             pruner.update_label(is_existing_sample)            
             
             if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states

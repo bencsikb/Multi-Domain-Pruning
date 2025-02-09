@@ -14,13 +14,17 @@ import copy
 class ModelHandler:
     def __init__(self, model_conf) -> None:
 
-        self._flattened_layers = []
+        # self._flattened_layers = []
         self._model_conf = model_conf
         self._device = model_conf.device
         self._example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
 
         self._init_model = self._load_pretrained()
         self._model = copy.deepcopy(self._init_model)
+        self._detmodel = self._model.model.train()
+        for name, param in self._detmodel.named_parameters():
+            param.requires_grad = True 
+        self._model.model = copy.deepcopy(self._detmodel)
                 
     
     def _load_pretrained(self) -> nn.Module:
@@ -41,8 +45,10 @@ class ModelHandler:
                 model = YOLOv10.from_pretrained('jameslahm/yolov10x')
 
         elif self._model_conf.pretrained_type == "yolov8":
-
                 model = YOLO('yolov8x.pt') 
+        elif self._model_conf.pretrained_type == "yolov5":
+                model = YOLO('yolov5n.pt') 
+
         else:
             raise ValueError(f"Model type '{type}' is not supported.")
 
@@ -54,14 +60,12 @@ class ModelHandler:
         self._model = copy.deepcopy(self._init_model)
 
     
-    def flatten_conv_layers(self) -> None:
-
-        self._flattened_layers = [module for module in self._model.modules() if isinstance(module, nn.Conv2d)]
-    
     def determine_prunable_layers(self) -> None: 
+
+        flattened_layers = [module for module in self._detmodel.modules() if isinstance(module, nn.Conv2d)]    
         
         ignored_layer_idxs = self._model_conf.ignored_layers
-        self._prunable_layers = [layer for i, layer in enumerate(self._flattened_layers) if i not in ignored_layer_idxs]
+        self._prunable_layers = [layer for i, layer in enumerate(flattened_layers) if i not in ignored_layer_idxs]
 
 
     def train(self):
@@ -78,43 +82,30 @@ class ModelHandler:
 
         return metrics # [precision, recall, map50, map95, M_paramns]
     
-    def prune(self, all_indices):
+    def prune(self, all_indices, layer_i):
 
-        detmodel = self._model.model.train()
-
-        for name, param in detmodel.model.named_parameters():
-            param.requires_grad = True 
+        self._detmodel.train()
 
         device = next(self._model.parameters()).device.type
-        DG = tp.DependencyGraph().build_dependency(detmodel, self._example_input.to(device))
+        DG = tp.DependencyGraph().build_dependency(self._detmodel, self._example_input.to(device))
 
         def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
                     pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
                     pruning_group.prune()
 
+        indices = all_indices[layer_i]     
+        layer = self._prunable_layers[layer_i]
 
-        # Determine prunable layers: check if they are in the self._prunable_layers list
-        prunable_layers = [module for module in detmodel.modules()
-                            if any(
-                                module is prunable_layer or (
-                                    isinstance(module, type(prunable_layer)) and
-                                    all(torch.equal(a, b) for a, b in zip(module.state_dict().values(), prunable_layer.state_dict().values()))
-                                )
-                                for prunable_layer in self._prunable_layers
-                            )]
-
-
-        for i, layer in enumerate(prunable_layers):
-
-            indices = all_indices[i]     
-
-            if indices is not None: # and len(indices):   
-                prune_conv_layer(layer, indices)
+        if indices is not None: # and len(indices):   
+            prune_conv_layer(layer, indices)
               
-            del layer
-            gc.collect()
+        del layer
+        gc.collect()
+
+        for name, param in self._detmodel.named_parameters():
+            param.requires_grad = True 
         
-        self._model.model = detmodel
+        self._model.model = copy.deepcopy(self._detmodel)
         
 
     def save_metrics():
