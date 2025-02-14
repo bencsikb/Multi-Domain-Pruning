@@ -74,10 +74,8 @@ class ActionHandler:
 
             alpha = 0.0 if is_applied_skip else self._pdf_generator.sample_from_pdf(layer_idx)
             is_existing_sample = None
-           
-        logging.info(f"{alpha = }, {is_existing_sample = }")
-        
-        return alpha, is_existing_sample
+                   
+        return float(alpha), is_existing_sample
     
     def force_zero(self, layer_idx, data, sample_handler):
         """ Force zero alpha & check if the sample exists already.

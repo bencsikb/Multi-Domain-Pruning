@@ -87,9 +87,11 @@ class ModelHandler:
         prec_metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size, plots=None)
         
         M_params = sum(p.numel() for p in self._model.parameters()) / 1e6
+        M_params = float(np.around(M_params, 2))
         # TODO calculate flops
 
-        metrics = list(prec_metrics.results_dict.values())[:4] + [M_params]
+        metrics = [float(np.around(m,4)) for m in list(prec_metrics.results_dict.values())[:4]] 
+        metrics.append(M_params)
 
         return metrics # [precision, recall, map50, map95, M_paramns]
     

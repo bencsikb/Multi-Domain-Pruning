@@ -62,6 +62,8 @@ if __name__ == "__main__":
             
             # Check if the alpha_seq exists already
             alpha, is_existing_sample = action_handler.choose_alpha(i, pruner.data, sample_handler)
+            logging.info(f"{alpha = }, {is_existing_sample = }")
+
             
             pruner.set_alpha(alpha)  
             pruner.select_indices()       
