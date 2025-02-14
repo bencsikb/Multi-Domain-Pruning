@@ -10,6 +10,9 @@ from thop import profile
 import torchvision.transforms as T
 import copy
 
+from ultralytics.nn.modules import Detect
+from src.model.tp_utils import replace_c2f_with_c2f_v2
+
 
 class ModelHandler:
     def __init__(self, model_conf) -> None:
@@ -22,6 +25,7 @@ class ModelHandler:
         self._init_model = self._load_pretrained()
         self._model = copy.deepcopy(self._init_model)
         self._detmodel = self._model.model.train()
+        replace_c2f_with_c2f_v2(self._detmodel)
         for name, param in self._detmodel.named_parameters():
             param.requires_grad = True 
         self._model.model = copy.deepcopy(self._detmodel)
@@ -62,10 +66,17 @@ class ModelHandler:
     
     def determine_prunable_layers(self) -> None: 
 
-        flattened_layers = [module for module in self._detmodel.modules() if isinstance(module, nn.Conv2d)]    
-        
-        ignored_layer_idxs = self._model_conf.ignored_layers
-        self._prunable_layers = [layer for i, layer in enumerate(flattened_layers) if i not in ignored_layer_idxs]
+        flattened_layers = [(name, module) for name, module in self._detmodel.named_modules() if isinstance(module, nn.Conv2d)]    
+        ignored_modules = []
+        unwrapped_parameters = []
+        for m in self._detmodel.modules():
+            if isinstance(m, (Detect,)):
+                ignored_modules.append(m)
+            
+        ignored_layers = [layer for module in ignored_modules for layer in module.modules() if isinstance(layer, nn.Conv2d)]
+
+        self._prunable_layers = [layer for i, layer in enumerate(flattened_layers) if layer[1] not in ignored_layers]
+
 
 
     def train(self):
@@ -83,6 +94,7 @@ class ModelHandler:
         return metrics # [precision, recall, map50, map95, M_paramns]
     
     def prune(self, all_indices, layer_i):
+        pass
 
         self._detmodel.train()
 
@@ -94,7 +106,7 @@ class ModelHandler:
                     pruning_group.prune()
 
         indices = all_indices[layer_i]     
-        layer = self._prunable_layers[layer_i]
+        layer = self._prunable_layers[layer_i][1] #0:name, 1:layer
 
         if indices is not None: # and len(indices):   
             prune_conv_layer(layer, indices)

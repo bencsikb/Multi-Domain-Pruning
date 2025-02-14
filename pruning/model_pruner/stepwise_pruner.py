@@ -78,9 +78,9 @@ class StepWisePruner():
     def select_indices(self) -> None:
         """ Select the indices to be removed from the output dimension, based on the given alpha.
         """
-        idxs = self._channel_selector.select_indices(self._model_handler.prunable_layers[self._layer_i], self.alpha_sequence.loc[self._layer_i, 'alpha'])
+        idxs = self._channel_selector.select_indices(self._model_handler.prunable_layers[self._layer_i][1], self.alpha_sequence.loc[self._layer_i, 'alpha'])
         self._all_indices[self._layer_i] = idxs
-        logging.info(f"{len(idxs)} / {self._model_handler.prunable_layers[self._layer_i].out_channels} channels will be removed.")
+        logging.info(f"{len(idxs)} / {self._model_handler.prunable_layers[self._layer_i][1].out_channels} channels will be removed.")
    
 
     def prune_model(self) -> None:   
@@ -103,11 +103,11 @@ class StepWisePruner():
 
     def update_state(self) -> None:
                 
-        self._model_state.loc[self._layer_i, 'in_ch'] = self._layer.in_channels
-        self._model_state.loc[self._layer_i, 'out_ch'] = self._layer.out_channels
-        self._model_state.loc[self._layer_i, 'kernel'] = self._layer.kernel_size[0]
-        self._model_state.loc[self._layer_i, 'stride'] = self._layer.stride[0]
-        self._model_state.loc[self._layer_i, 'pad'] = self._layer.padding[0]
+        self._model_state.loc[self._layer_i, 'in_ch'] = self._layer[1].in_channels
+        self._model_state.loc[self._layer_i, 'out_ch'] = self._layer[1].out_channels
+        self._model_state.loc[self._layer_i, 'kernel'] = self._layer[1].kernel_size[0]
+        self._model_state.loc[self._layer_i, 'stride'] = self._layer[1].stride[0]
+        self._model_state.loc[self._layer_i, 'pad'] = self._layer[1].padding[0]
         if self._layer_i - 1  >= 0:
             self._model_state.loc[self._layer_i-1, 'n_pruned_ch'] = len(self._all_indices[self._layer_i-1]) 
         # TODO all other stuff

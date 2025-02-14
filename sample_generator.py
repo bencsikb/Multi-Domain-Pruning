@@ -54,6 +54,7 @@ if __name__ == "__main__":
 
             # Logging
             logging.info(f"Sample {sample_handler.n_samples}, layer {i}")
+            logging.info(layer)
 
             # Load model
             pruner.reset_model()
