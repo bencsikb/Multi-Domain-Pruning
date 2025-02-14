@@ -37,7 +37,8 @@ class ActionHandler:
     def choose_alpha(self, layer_idx,  data=None, sample_handler=None):
         """ Choose an alpha value from the possible values list, based on the PDF defined for the given layer.
             Check the skip rules, and select alpha = 0 if any skip ruke is applied for the layer.
-            If data and sample_handler are set: Check if the data sample with the selected alpha already exists, and repeat until finding a non-existinig sample. 
+            If data and sample_handler are set: Check if the data sample with the selected alpha already exists, 
+                                                and repeat until finding a non-existinig sample (max 10 trials). 
                                                 Otherwise, just return the first sampled alpha.
 
         Returns:
@@ -54,8 +55,11 @@ class ActionHandler:
             data_temp = data.copy()
             tried_alphas = []
             is_existing_sample = True
+            cnt = 0
+            max_trials = 11
             while is_existing_sample:
-
+                
+                cnt += 1
                 alpha = 0.0 if is_applied_skip else self._pdf_generator.sample_from_pdf(layer_idx)
                 if is_applied_skip: logging.info(f"Skiprule applied for layer {layer_idx}.")
 
@@ -64,7 +68,7 @@ class ActionHandler:
                     data_temp.loc[layer_idx, 'alpha'] = alpha  
                     is_existing_sample = sample_handler.is_existing_sample(data_temp)
                 
-                if (len(tried_alphas) == n_possible_alphas) or is_applied_skip:  
+                if (len(tried_alphas) == n_possible_alphas) or is_applied_skip or (cnt == max_trials):  
                         break 
         else: 
 
