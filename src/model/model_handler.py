@@ -23,12 +23,10 @@ class ModelHandler:
         self._example_input = torch.randn(1, 3, 224, 224) # TODO where should this come from?
 
         self._init_model = self._load_pretrained()
-        self._model = copy.deepcopy(self._init_model)
-        self._detmodel = self._model.model.train()
-        replace_c2f_with_c2f_v2(self._detmodel)
-        for name, param in self._detmodel.named_parameters():
-            param.requires_grad = True 
-        self._model.model = copy.deepcopy(self._detmodel)
+        self._model = None
+        self._detmodel = None 
+
+        self.reset_model()
                 
     
     def _load_pretrained(self) -> nn.Module:
@@ -49,7 +47,10 @@ class ModelHandler:
                 model = YOLOv10.from_pretrained('jameslahm/yolov10x')
 
         elif self._model_conf.pretrained_type == "yolov8":
-                model = YOLO('yolov8x.pt') 
+            
+            assert self._model_conf.model_path is not None, "Model path cannot be None"
+            model = YOLO(self._model_conf.model_path) 
+
         elif self._model_conf.pretrained_type == "yolov5":
                 model = YOLO('yolov5n.pt') 
 
@@ -60,8 +61,17 @@ class ModelHandler:
 
     def reset_model(self) -> None:
 
-        del self._model
+        if self._model is not None :
+            del self._model
+
         self._model = copy.deepcopy(self._init_model)
+        self._detmodel = self._model.model.train()
+        replace_c2f_with_c2f_v2(self._detmodel)
+        for _, param in self._detmodel.named_parameters():
+            param.requires_grad = True 
+        self._model.model = copy.deepcopy(self._detmodel)
+
+        self.determine_prunable_layers()
 
     
     def determine_prunable_layers(self) -> None: 
@@ -96,7 +106,6 @@ class ModelHandler:
         return metrics # [precision, recall, map50, map95, M_paramns]
     
     def prune(self, all_indices, layer_i):
-        pass
 
         self._detmodel.train()
 
