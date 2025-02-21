@@ -9,6 +9,7 @@ from thop import profile
 #from fvcore.nn import FlopCountAnalysis
 import torchvision.transforms as T
 import copy
+from typing import List
 
 from ultralytics.nn.modules import Detect
 from src.model.tp_utils import replace_c2f_with_c2f_v2
@@ -139,16 +140,6 @@ class ModelHandler:
     def model(self) -> nn.Module:
         return self._model
 
-    # @model.setter
-    # def model(self, model: nn.Module) -> None:
-    #     if model is None:
-    #         raise ValueError("Model cannot be set to None.")
-    #     self._model = model # TODO deepcopy?
-    
-    @property
-    def flattened_layers(self) -> list:
-        return self._flattened_layers
-
     @property
     def prunable_layers(self) -> list:
         return self._prunable_layers
@@ -160,6 +151,31 @@ class ModelHandler:
     @property
     def device(self) -> str:
         return self._device
+
+    @property
+    def prunable_in_channels(self) -> List[int]:
+        return [layer[1].in_channels for layer in self._prunable_layers]
+    
+    @property
+    def prunable_out_channels(self) -> List[int]:
+        return [layer[1].out_channels for layer in self._prunable_layers]
+    
+    @property
+    def prunable_kernel_sizes(self) -> List[int]:
+        return [layer[1].kernel_size[0] for layer in self._prunable_layers]
+
+    @property
+    def prunable_strides(self) -> List[int]:
+        return [layer[1].stride[0] for layer in self._prunable_layers]
+
+    @property
+    def prunable_paddings(self) -> List[int]:
+        return [layer[1].padding[0] for layer in self._prunable_layers]
+
+
+
+
+
 
     
 

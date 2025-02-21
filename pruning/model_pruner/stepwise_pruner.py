@@ -21,8 +21,9 @@ class StepWisePruner():
         self._conf = conf
         self._channel_selector = channel_selector
 
-        self.state_features = ['in_ch', 'out_ch', 'kernel', 'stride', 'pad', 'n_pruned_ch']
-        self.metrics_features = ['recall', 'precision', 'map50', 'map90', 'n_params']
+        self.state_features = ['is_pruned', 'in_ch', 'out_ch', 'kernel', 'stride', 'pad', 'n_pruned_ch']
+        self.label_features = ['recall', 'precision', 'map50', 'map90', 'n_params', 'n_layer_channels']
+        self.metrics_features = self.label_features[:-1]
 
         self._init_metrics = pd.DataFrame(0.0, index=range(1), columns=self.metrics_features)
         self._metrics = pd.DataFrame(0.0, index=range(1), columns=self.metrics_features)
@@ -71,6 +72,7 @@ class StepWisePruner():
         self._metrics[self._metrics.columns] = self._init_metrics.values
         self._all_indices = [None] * self._model_handler.n_prunable_layers
         self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features) 
+        self.update_state() # fill the channel-related params
         self._label = pd.DataFrame(0.0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features + [col + '_init' for col in self.metrics_features])
         self._alpha_sequence = pd.DataFrame(0.0, index=range(self._model_handler.n_prunable_layers), columns=['alpha'])         
 
@@ -102,21 +104,24 @@ class StepWisePruner():
 
 
     def update_state(self) -> None:
-                
-        self._model_state.loc[self._layer_i, 'in_ch'] = self._layer[1].in_channels
-        self._model_state.loc[self._layer_i, 'out_ch'] = self._layer[1].out_channels
-        self._model_state.loc[self._layer_i, 'kernel'] = self._layer[1].kernel_size[0]
-        self._model_state.loc[self._layer_i, 'stride'] = self._layer[1].stride[0]
-        self._model_state.loc[self._layer_i, 'pad'] = self._layer[1].padding[0]
-        if self._layer_i - 1  >= 0:
+               
+        self._model_state.loc[:, 'in_ch'] = self._model_handler.prunable_in_channels
+        self._model_state.loc[:, 'out_ch'] = self._model_handler.prunable_out_channels
+        self._model_state.loc[:, 'kernel'] = self._model_handler.prunable_kernel_sizes
+        self._model_state.loc[:, 'stride'] = self._model_handler.prunable_strides
+        self._model_state.loc[:, 'pad'] = self._model_handler.prunable_paddings
+
+        if self._layer_i  >= 1:
+            self._model_state.loc[self._layer_i-1, 'is_pruned'] = 1
             self._model_state.loc[self._layer_i-1, 'n_pruned_ch'] = len(self._all_indices[self._layer_i-1]) 
-        # TODO all other stuff
 
     def update_label(self, is_existing_sample) -> None:
 
         if not is_existing_sample: 
 
             self._label.loc[self._layer_i, self.metrics_features] = self._metrics.values
+            self._label.loc[self._layer_i, 'n_layer_channels'] = self._layer[1].out_channels
+
             init_columns = [col + '_init' for col in self.metrics_features]
             self._label.loc[self._layer_i, init_columns] = self._init_metrics.values.flatten()
         
@@ -141,7 +146,7 @@ class StepWisePruner():
          pass
 
     def set_alpha(self, alpha) -> None:
-        self._alpha_sequence.loc[self._layer_i, 'alpha'] = alpha # TODO normalize
+        self._alpha_sequence.loc[self._layer_i, 'alpha'] = alpha 
     
     @property
     def alpha_sequence(self) -> pd.DataFrame:
@@ -154,4 +159,4 @@ class StepWisePruner():
     
     @property 
     def label(self) -> pd.DataFrame:
-        return self._label.iloc[[self._layer_i]] #TODO normalize
+        return self._label.iloc[[self._layer_i]]
