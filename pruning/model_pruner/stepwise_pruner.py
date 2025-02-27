@@ -132,16 +132,6 @@ class StepWisePruner():
                 "Label equality check failed. The saved label DataFrame does not match the initial metrics.")
             self._label.iloc[self._layer_i] = saved_label_df
     
-    def revoke_action(self, alpha) -> None:
-        """ Called if the pruned model failed the evaluation due to shape mismatch.
-            In that case alpha will be changed to 0.0, and the corresponding selected_indices will be removed.
-        """
-
-        assert alpha == 0.0, "Alpha must be zero if revoke_action is called!"
-
-        self.set_alpha(alpha)
-        self.select_indices()
-        # TODO check if layer_i changed already
     
     def fine_tune():
          pass
