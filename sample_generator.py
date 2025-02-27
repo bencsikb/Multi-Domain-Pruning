@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     while sample_handler.n_samples < conf.samples.max_samples:
 
-        pruner.reset_state()
+        pruner.reset_model_and_state()
 
         for i, layer in enumerate(model_handler.prunable_layers):
 
@@ -57,7 +57,7 @@ if __name__ == "__main__":
             logging.info(layer)
 
             # Load model
-            pruner.reset_model()
+            pruner.increment_layer()
             pruner.update_state()
             
             # Check if the alpha_seq exists already

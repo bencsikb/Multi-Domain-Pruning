@@ -31,7 +31,7 @@ class StepWisePruner():
         self._set_init_metrics()
 
         self._layer_i = -1
-        self.reset_state()
+        self.reset_model_and_state()
         #TODO call reset model     
 
     def _set_init_metrics(self) -> None:
@@ -54,17 +54,18 @@ class StepWisePruner():
         self._metrics.loc[0, 'n_params'] = metrics[4]
 
 
-    def reset_model(self) -> None:
-        """ Resets the model to its original state before applying pruning and imcrements the layer counter.
+    def increment_layer(self) -> None:
+        """ 
+        Increments the layer counter and takes the next prunable layer.
         Should be called before pruning each layer.
         """
-        # self._model_handler.reset_model()
         self._layer_i += 1
-        self._layer = self._model_handler.prunable_layers[self._layer_i] # TODO self.prunable_layers[self._layer_i] # TODO separat func? 
+        self._layer = self._model_handler.prunable_layers[self._layer_i] 
 
     
-    def reset_state(self) -> None:
-        """ Resets the state and labels.
+    def reset_model_and_state(self) -> None:
+        """ 
+        Resets the model, state and labels.
         Should be called before pruning the first layer.
         """
         self._model_handler.reset_model()
