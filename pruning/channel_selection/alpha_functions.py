@@ -83,9 +83,9 @@ class LinspaceAction:
     
 
 class HalfSigmoidAction:
-    def generate(self, min, max, n_steps) -> list:
+    def generate(self, min, max, n_steps, strech=4) -> list:
         """Generate a half-sigmoid sequence from min to max with n_steps."""
-        x_values = np.linspace(-3, 3, n_steps)  
+        x_values = np.linspace(-strech, strech, n_steps)  
         sigmoid_values = [1 / (1 + np.exp(-x)) for x in x_values]
         
         scaled_values = [min + (max - min) * val for val in sigmoid_values]
@@ -94,6 +94,7 @@ class HalfSigmoidAction:
         scaled_values[-1] = max
 
         return [round(val, 1) for val in scaled_values]
+    
 
 class LogEAction:
     def generate(self, min, max, n_steps) -> list:
