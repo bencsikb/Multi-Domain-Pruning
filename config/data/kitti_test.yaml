@@ -1,7 +1,7 @@
 
 path: /data2/blanka/DATASETS/KITTI
 train: training/images
-val: validation/images
+val: testing/images 
 
 test: testing/images
 
