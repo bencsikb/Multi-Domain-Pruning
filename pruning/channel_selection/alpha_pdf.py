@@ -11,8 +11,29 @@ class PDFGenerator:
         self._transition_index = transition_index
         self._factor = factor
 
-        self._pdf_list = self._generate_pdf()
+        if self._transition_index and self._factor:
+            self._pdf_list = self._generate_pdf()
+        else:
+            self._pdf_list = self._generate_random_choice_pdf()
 
+    def _generate_random_choice_pdf(self):
+        """
+        Generate a uniform PDF where each value has an equal probability.
+
+        Returns:
+        pdf_list: numpy.ndarray
+            A 2D array representing the uniform PDF over `n` points.
+        """
+        pdf_list = []
+        num_values = len(self._values)
+        uniform_prob = 1.0 / num_values  # Equal probability for each value
+
+        for _ in range(self._n):
+            probs = [uniform_prob] * num_values
+            pdf_list.append(probs)
+
+        return np.array(pdf_list)     
+       
     def _generate_pdf(self):
         """
         Generate a PDF for values values over n points, with dominant P(0) before transition_index.

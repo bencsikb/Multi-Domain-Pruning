@@ -1,4 +1,4 @@
-import numpy as np
+import random 
 import logging
 
 from types import SimpleNamespace
@@ -95,6 +95,7 @@ class ActionHandler:
         is_applied = False
         skipunder = getattr(self._conf.channel_selection, "skipunder", None)
         skipmod = getattr(self._conf.channel_selection, "skipmod", None)
+        random_skip = getattr(self._conf.channel_selection, "random_skip", False)
 
         if (skipunder is not None) and (layer_idx < skipunder):
             is_applied = True
@@ -107,6 +108,8 @@ class ActionHandler:
                 if layer_idx % mod == 0:
                     is_applied = True
                     break 
+        elif random_skip:
+            is_applied = random.choice([True, False])
 
         return is_applied
 
