@@ -77,6 +77,22 @@ class ActionHandler:
                    
         return float(alpha), is_existing_sample
     
+    def choose_alpha_for_single_layer(self, layer_idx,  data, sample_handler, single_layer_idx, sample_cnt):
+
+        if layer_idx == single_layer_idx:
+            alpha = self._possible_alphas[sample_cnt]
+            sample_cnt += 1
+        else: 
+            alpha = 0.0
+
+        data_temp = data.copy()
+        data_temp.loc[layer_idx, 'alpha'] = alpha  
+        is_existing_sample = sample_handler.is_existing_sample(data_temp)
+
+        return float(alpha), is_existing_sample, sample_cnt
+
+
+    
     def force_zero(self, layer_idx, data, sample_handler):
         """ Force zero alpha & check if the sample exists already.
         """
@@ -112,5 +128,9 @@ class ActionHandler:
             is_applied = random.choice([True, False])
 
         return is_applied
+    
+    @property
+    def possible_alphas(self) -> list:
+        return self._possible_alphas
 
    

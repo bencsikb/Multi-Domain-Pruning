@@ -44,6 +44,9 @@ if __name__ == "__main__":
     action_handler.define_alpha_list(to_save=True)
     action_handler.define_alpha_pdfs(to_save=True)
 
+    if conf.channel_selection.single_layer:
+        index_single_layer = 0
+        sample_cnt = 0
     while sample_handler.n_samples < conf.samples.max_samples:
 
         pruner.reset_model_and_state()
@@ -58,8 +61,18 @@ if __name__ == "__main__":
             pruner.increment_layer()
             pruner.update_state()
             
-            # Check if the alpha_seq exists already
-            alpha, is_existing_sample = action_handler.choose_alpha(i, pruner.data, sample_handler)
+            
+            if conf.channel_selection.single_layer:
+                alpha, is_existing_sample, sample_cnt = action_handler.choose_alpha_for_single_layer(
+                    i, pruner.data, sample_handler, index_single_layer, sample_cnt)
+                
+                if sample_cnt == conf.channel_selection.n_single_layer_samples:
+                    index_single_layer += 1
+                    sample_cnt = 0
+
+            else: 
+                alpha, is_existing_sample = action_handler.choose_alpha(i, pruner.data, sample_handler)
+
             logging.info(f"{alpha = }, {is_existing_sample = }")
 
             
