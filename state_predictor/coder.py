@@ -36,12 +36,11 @@ class Coder:
         self._params_range = (0, label['n_params_init'])
 
     
-    def _calculate_dmap(self):
-        pass
-        # 
+    def _calculate_dmap(self, map, map_init):
+        return  1 - (map / map_init)
 
-    def _calculate_spars(self):
-        pass
+    def _calculate_spars(self, n_params, n_params_init):
+        return  1 - (n_params / n_params_init)
 
     def _determine_pruned_area(self):
         """
@@ -74,11 +73,11 @@ class Coder:
         # [sparsity, dmap]
         encoded_label = torch.zeros([2])  
 
-        sparsity = 1 - (label['n_params'] / label['n_params_init'])
-        dmap = 1 - (label['map50' / label['map50_init']])
+        sparsity = self._calculate_spars(label['n_params'], label['n_params_init'])
+        dmap = self._calculate_dmap(label['map50', label['map50_init']])
         encoded_label[0] = normalize(sparsity, value_range=(0, 1))
         encoded_label[1] = normalize(dmap, value_range=(0, 1))
-
+        
         return torch.Tensor(encoded_label)
 
 

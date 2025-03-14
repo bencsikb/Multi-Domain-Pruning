@@ -26,13 +26,13 @@ def denormalize(
 
     if isinstance(values, torch.Tensor):
         denorm_values = scale(values)
-        denorm_values = torch.clamp(denorm_values, min_val, max_val)
+        # denorm_values = torch.clamp(denorm_values, min_val, max_val)
     elif isinstance(values, np.ndarray):
         denorm_values = scale(values.astype(float))  # Ensure float dtype
-        denorm_values = np.clip(denorm_values, min_val, max_val)
+        # denorm_values = np.clip(denorm_values, min_val, max_val)
     elif isinstance(values, (float, int)):
         denorm_values = scale(float(values))
-        denorm_values = max(min(denorm_values, max_val), min_val)
+        # denorm_values = max(min(denorm_values, max_val), min_val)
     else:
         raise TypeError(f"Unsupported input type: {type(values)}. Function expects float, np.ndarray, or torch.Tensor.")
 
