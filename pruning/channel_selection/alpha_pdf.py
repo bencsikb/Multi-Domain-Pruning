@@ -11,7 +11,7 @@ class PDFGenerator:
         self._transition_index = transition_index
         self._factor = factor
 
-        if self._transition_index and self._factor:
+        if self._transition_index is not None and self._factor is not None:
             self._pdf_list = self._generate_pdf()
         else:
             self._pdf_list = self._generate_random_choice_pdf()
