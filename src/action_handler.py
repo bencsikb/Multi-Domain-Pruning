@@ -109,7 +109,8 @@ class ActionHandler:
                     is_applied = True
                     break 
         elif random_skip:
-            is_applied = random.choice([True, False])
+            is_applied = random.choices([True, False], weights=self._conf.channel_selection.random_weights)[0]
+
 
         return is_applied
 
