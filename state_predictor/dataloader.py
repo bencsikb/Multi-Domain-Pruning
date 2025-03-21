@@ -9,16 +9,20 @@ from torch.utils.data import DataLoader, Dataset
 from state_predictor.coder import Coder
 
 
-def create_pruning_dataloader(data_path, sample_path, cache_path, cache_ext, batch_size, shuffle, world_size=1):
-    dataset = SPNDataset(data_path, sample_path, cache_path, cache_ext)
-    batch_size = min(batch_size, len(dataset))
+def create_pruning_dataloader(conf: SimpleNamespace, 
+                              split_type: str, 
+                              shuffle: bool = True, 
+                              world_size: int = 1) -> DataLoader:
+
+    dataset = SPNDataset(conf, split_type )
+    batch_size = min(conf.train.batch_size, len(dataset))
     nw = min([os.cpu_count() // world_size, batch_size if batch_size > 1 else 0, 8])  
     dataloader = DataLoader(dataset,
                             batch_size=batch_size,
                             num_workers=nw,
                             shuffle=shuffle,
                             collate_fn=SPNDataset.collate_fn)
-    return dataloader, dataset
+    return dataloader
 
 
 import os
@@ -30,18 +34,18 @@ from torch.utils.data import Dataset
 
 class SPNDataset(Dataset):
     def __init__(self, 
-                 root_path: str, 
                  conf: SimpleNamespace, 
+                 split_type: str,
                  data_folder: str = "data", 
                  label_folder: str = "label",
                  cache_file: str = "cache.pkl",
                  rebuild_cache: bool = False):
         
-        self.root_path = root_path
-        self.conf = conf
-        self.data_path = os.path.join(root_path, data_folder)
-        self.label_path = os.path.join(root_path, label_folder)
-        self.cache_path = os.path.join(root_path, cache_file)
+        self._conf = conf
+        self._root_path = os.path.join(self._conf.data.root, split_type)
+        self.data_path = os.path.join(self._root_path, data_folder)
+        self.label_path = os.path.join(self._root_path, label_folder)
+        self.cache_path = os.path.join(self._root_path, cache_file)
 
         # Ensure lists are sorted to maintain correspondence
         self.state_files = sorted(os.listdir(self.data_path))
@@ -63,7 +67,7 @@ class SPNDataset(Dataset):
         """Initialize the coder with an example file."""
         state_example_df = pd.read_pickle(os.path.join(self.data_path, self.state_files[0]))
         label_example_df = pd.read_pickle(os.path.join(self.label_path, self.label_files[0]))
-        alpha_range = self.conf.alpa.min_max_steps[:2]
+        alpha_range = self._conf.alpha.min_max_steps[:2]
         return Coder(state_example_df, label_example_df, alpha_range)
 
     def _build_cache(self):
@@ -105,7 +109,7 @@ class SPNDataset(Dataset):
     def collate_fn(batch):
         """Custom collate function for batching."""
         data, label = zip(*batch)
-        return torch.stack(data, 0), torch.cat(label, 0)
+        return torch.stack(data, 0), torch.stack(label, 0)
 
     def clear_cache(self):
         """Deletes the cache file and clears in-memory cache."""

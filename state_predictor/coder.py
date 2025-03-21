@@ -1,9 +1,10 @@
 import torch
 import numpy as np
 import pandas as pd
+from pandas.core.series import Series
 from typing import Tuple
 
-from utils import normalize, denormalize
+from state_predictor.utils import normalize
 
 
 class Coder:
@@ -36,11 +37,20 @@ class Coder:
         self._params_range = (0, label['n_params_init'])
 
     
-    def _calculate_dmap(self, map, map_init):
-        return  1 - (map / map_init)
+    def _calculate_dmap(self, map: Series, map_init: Series) -> float:
+        """
+        Parameters:
+            map, map_init (Series): A one-element Series representing the current mAP and the initial mAP.
+        """
+        return 1 - (map.item() / map_init.item())
 
-    def _calculate_spars(self, n_params, n_params_init):
-        return  1 - (n_params / n_params_init)
+    def _calculate_spars(self, n_params: Series, n_params_init: Series) -> float:
+        """
+        Parameters:
+            n_params, n_params_init (Series): A one-element Series representing the current and the 
+                                              initial nuber of parameters in the model.
+        """
+        return 1 - (n_params.item() / n_params_init.item())
 
     def _determine_pruned_area(self):
         """
@@ -64,17 +74,19 @@ class Coder:
         encoded_state[:, 6] = normalize(state['pad'].values, self._pad_range)
         encoded_state[:, 7] = normalize(state['n_pruned_ch'].values, self._channel_range)
 
+        # Make it one-dimensional
+        encoded_state = encoded_state.flatten()
+
         return torch.tensor(encoded_state, dtype=torch.float32)
 
 
     
     def encode_label(self, label: pd.DataFrame) -> torch.Tensor:
-        pass
         # [sparsity, dmap]
         encoded_label = torch.zeros([2])  
 
         sparsity = self._calculate_spars(label['n_params'], label['n_params_init'])
-        dmap = self._calculate_dmap(label['map50', label['map50_init']])
+        dmap = self._calculate_dmap(label['map50'], label['map50_init'])
         encoded_label[0] = normalize(sparsity, value_range=(0, 1))
         encoded_label[1] = normalize(dmap, value_range=(0, 1))
         
