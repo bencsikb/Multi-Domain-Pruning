@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from typing import Union, Tuple, Any
+from typing import Union, Tuple, Any, List
 
 def denormalize(
     values: Union[float, np.ndarray, torch.Tensor], 
@@ -79,3 +79,50 @@ def normalize(
         raise TypeError(f"Unsupported input type: {type(values)}. Function expects int, float, np.ndarray, or torch.Tensor.")
 
     return normalized_values
+
+
+def calculate_metrics(gt, pred, margin=0.05) -> np.array:
+    """
+    Calculate standard regression metrics from sklearn and customized metrics for evaluating SPN.
+    :param gt: ground truth - tensor
+    :param pred: predicted values - tensor
+    :param margin: for calculating accuracy with a margin - denormalized value
+    :return: list of the calculated metrics
+            - margin_accuracy: proportion of the denormalized predictions falling into the margin
+            - negsign_recall: proportion of the negative gts predicted with a negative sign as well
+                              (in dperf the negative sign means performance improvement)
+            - mean_absoute_error: with sklearn on denormalized data
+            - max_error: with sklearn on denormalized data
+            - mean_squared_error: with sklearn on denormalized data
+            - r2_score: with sklearn on denormalized data
+    """
+    from sklearn.metrics import max_error, mean_absolute_error, mean_squared_error, r2_score
+
+
+    metrics = []
+    gt, pred = denormalize(gt, (0.0, 1.0)), denormalize(pred, (0.0, 1.0))
+
+    # handcrafted metrics
+
+    margin_bool = torch.abs(gt - pred) <= margin  # tensor with bool values
+    margin_accuracy = margin_bool.float().mean()
+    metrics.append(margin_accuracy.item())
+
+    # negsign_bool = (gt < 0.0)
+    # nmb_negsign_gt = torch.count_nonzero(negsign_bool)
+    # indices = torch.nonzero(negsign_bool)
+    # pred_negsign_bool = pred[indices] < 0.0
+    # nmb_negsign_pred = torch.count_nonzero(pred_negsign_bool)
+    # negsign_recall = nmb_negsign_pred / (nmb_negsign_gt + 1e-15)
+    # metrics.append(negsign_recall.item())
+
+
+    # sklearn regression metrics
+    gt, pred = gt.cpu().detach().numpy(), pred.cpu().detach().numpy()
+
+    metrics.append(mean_absolute_error(gt, pred))
+    metrics.append(max_error(gt, pred))
+    metrics.append(mean_squared_error(gt, pred))
+    metrics.append(r2_score(gt, pred))
+    
+    return np.array(metrics)

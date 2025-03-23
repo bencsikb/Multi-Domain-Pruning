@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
+import numpy as np
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 
 from state_predictor.model import SPN
+from state_predictor.utils import calculate_metrics
 from utils.losses import LogCoshLoss
 
 
@@ -13,6 +15,8 @@ class SPNHandler:
         self._conf = conf
         self._model_conf = conf.model
         self._device = self._conf.train.device
+
+        self._label_keys = {"spars": 0, "dmap": 1}
 
         self._model = None
 
@@ -83,11 +87,9 @@ class SPNHandler:
             self._model.train()
 
             running_loss = 0
-            cnnt = 0
-
+            running_metrics = {"spars": np.zeros(5), "dmap": np.zeros(5)}
 
             for batch_i, (data_gt, label_gt) in enumerate(train_dataloader):
-                print(f"batch {batch_i}")
                 
                 data_gt = data_gt.type(torch.float32).to(self._device)
                 label_gt = label_gt.type(torch.float32).to(self._device)
@@ -99,15 +101,55 @@ class SPNHandler:
                 self._optimizer.step()
 
                 running_loss += loss.cpu().item()
-                print(f"{running_loss = }")
-
+                for key, idx in self._label_keys.items():
+                    running_metrics[key] += calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
 
             # Calculate training metrics
             running_loss /= len(train_dataloader)
+            running_metrics = {k: v / len(train_dataloader) for k, v in running_metrics.items()}
 
 
-    def evaluate(self) -> list:
-        pass
+            # Validation
+            if epoch % self._conf.train.val_freq == 0:
+                val_loss, val_metrics = self.evaluate(val_dataloader)
+
+            # Logging
+                
+
+            print(f"{epoch = }, {running_loss = }, {val_loss = }")
+            print(f"{running_metrics = }, {val_metrics = }")
+            self._lr_scheduler.step()
+            epoch += 1
+
+
+    def evaluate(self, dataloader: DataLoader) -> list:
+
+        self._model.eval()
+
+        running_loss = 0
+        running_metrics = {"spars": np.zeros(5), "dmap": np.zeros(5)}
+
+        for batch_i, (data_gt, label_gt) in enumerate(dataloader):
+                
+            data_gt = data_gt.type(torch.float32).to(self._device)
+            label_gt = label_gt.type(torch.float32).to(self._device)
+
+            self._optimizer.zero_grad()
+            outs = self._model(data_gt)
+            loss = self._loss_func(outs, label_gt)
+
+            running_loss += loss.cpu().item()
+            for key, idx in self._label_keys.items():
+                running_metrics[key] += calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
+
+        # Calculate training metrics
+        running_loss /= len(dataloader)
+        running_metrics = {k: v / len(dataloader) for k, v in running_metrics.items()}
+
+        return running_loss, running_metrics
+
+
+    
 
     def save_metrics():
         pass
