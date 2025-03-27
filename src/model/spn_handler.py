@@ -10,16 +10,16 @@ from utils.losses import LogCoshLoss
 
 
 class SPNHandler:
-    def __init__(self, conf) -> None:
+    def __init__(self, conf, tb_writer) -> None:
 
         self._conf = conf
+        self._tb_writer = tb_writer
         self._model_conf = conf.model
         self._device = self._conf.train.device
 
         self._label_keys = {"spars": 0, "dmap": 1}
 
         self._model = None
-
                 
     
     def _load_pretrained(self, weights) -> nn.Module:
@@ -77,20 +77,17 @@ class SPNHandler:
 
     
     def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader):
-        
         epochs = self._conf.train.epochs
-
         epoch = 0
 
         while epoch < epochs:         
-                  
             self._model.train()
 
-            running_loss = 0
-            running_metrics = {"spars": np.zeros(5), "dmap": np.zeros(5)}
+            running_loss = 0.0
+            # Properly initialize running_metrics with sub-dicts for each label key
+            running_metrics = {key: {} for key in self._label_keys}
 
             for batch_i, (data_gt, label_gt) in enumerate(train_dataloader):
-                
                 data_gt = data_gt.type(torch.float32).to(self._device)
                 label_gt = label_gt.type(torch.float32).to(self._device)
 
@@ -101,53 +98,78 @@ class SPNHandler:
                 self._optimizer.step()
 
                 running_loss += loss.cpu().item()
+
                 for key, idx in self._label_keys.items():
-                    running_metrics[key] += calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
+                    metrics_dict = calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
 
-            # Calculate training metrics
+                    # Initialize nested metric names if missing
+                    for metric_name, value in metrics_dict.items():
+                        if metric_name not in running_metrics[key]:
+                            running_metrics[key][metric_name] = 0.0
+                        running_metrics[key][metric_name] += value
+
+            # Average loss and metrics
             running_loss /= len(train_dataloader)
-            running_metrics = {k: v / len(train_dataloader) for k, v in running_metrics.items()}
-
+            for key in running_metrics:
+                for metric_name in running_metrics[key]:
+                    running_metrics[key][metric_name] /= len(train_dataloader)
 
             # Validation
             if epoch % self._conf.train.val_freq == 0:
                 val_loss, val_metrics = self.evaluate(val_dataloader)
 
-            # Logging
-                
+            # Tensorboard logging
+            self._tb_writer.add_scalar("train_loss", running_loss, epoch)
+            self._tb_writer.add_scalar("val_loss", val_loss, epoch)
+            # Log training metrics
+            for label_key in running_metrics:
+                for metric_name, value in running_metrics[label_key].items():
+                    tag = f"train/{label_key}/{metric_name}"
+                    self._tb_writer.add_scalar(tag, value, epoch)
 
-            print(f"{epoch = }, {running_loss = }, {val_loss = }")
-            print(f"{running_metrics = }, {val_metrics = }")
+            # Log validation metrics
+            for label_key in val_metrics:
+                for metric_name, value in val_metrics[label_key].items():
+                    tag = f"val/{label_key}/{metric_name}"
+                    self._tb_writer.add_scalar(tag, value, epoch)
+
+            # Epoch step
             self._lr_scheduler.step()
             epoch += 1
 
-
-    def evaluate(self, dataloader: DataLoader) -> list:
-
+    def evaluate(self, dataloader: DataLoader) -> tuple:
         self._model.eval()
 
-        running_loss = 0
-        running_metrics = {"spars": np.zeros(5), "dmap": np.zeros(5)}
+        running_loss = 0.0
+        # Initialize metric containers for each label key
+        running_metrics = {key: {} for key in self._label_keys}
 
         for batch_i, (data_gt, label_gt) in enumerate(dataloader):
-                
             data_gt = data_gt.type(torch.float32).to(self._device)
             label_gt = label_gt.type(torch.float32).to(self._device)
 
-            self._optimizer.zero_grad()
-            outs = self._model(data_gt)
-            loss = self._loss_func(outs, label_gt)
+            with torch.no_grad():
+                outs = self._model(data_gt)
+                loss = self._loss_func(outs, label_gt)
 
             running_loss += loss.cpu().item()
-            for key, idx in self._label_keys.items():
-                running_metrics[key] += calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
 
-        # Calculate training metrics
+            for key, idx in self._label_keys.items():
+                metrics_dict = calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
+
+                # Accumulate each metric individually
+                for metric_name, value in metrics_dict.items():
+                    if metric_name not in running_metrics[key]:
+                        running_metrics[key][metric_name] = 0.0
+                    running_metrics[key][metric_name] += value
+
+        # Compute average loss and metrics over the dataset
         running_loss /= len(dataloader)
-        running_metrics = {k: v / len(dataloader) for k, v in running_metrics.items()}
+        for key in running_metrics:
+            for metric_name in running_metrics[key]:
+                running_metrics[key][metric_name] /= len(dataloader)
 
         return running_loss, running_metrics
-
 
     
 

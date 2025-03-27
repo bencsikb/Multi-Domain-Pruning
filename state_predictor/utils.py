@@ -81,7 +81,7 @@ def normalize(
     return normalized_values
 
 
-def calculate_metrics(gt, pred, margin=0.05) -> np.array:
+def calculate_metrics(gt, pred, margin=0.05) -> dict:
     """
     Calculate standard regression metrics from sklearn and customized metrics for evaluating SPN.
     :param gt: ground truth - tensor
@@ -99,30 +99,21 @@ def calculate_metrics(gt, pred, margin=0.05) -> np.array:
     from sklearn.metrics import max_error, mean_absolute_error, mean_squared_error, r2_score
 
 
-    metrics = []
+    metrics = {}
+
     gt, pred = denormalize(gt, (0.0, 1.0)), denormalize(pred, (0.0, 1.0))
 
-    # handcrafted metrics
-
-    margin_bool = torch.abs(gt - pred) <= margin  # tensor with bool values
+    # Handcrafted metric: margin accuracy
+    margin_bool = torch.abs(gt - pred) <= margin
     margin_accuracy = margin_bool.float().mean()
-    metrics.append(margin_accuracy.item())
+    metrics["margin_accuracy"] = margin_accuracy.item()
 
-    # negsign_bool = (gt < 0.0)
-    # nmb_negsign_gt = torch.count_nonzero(negsign_bool)
-    # indices = torch.nonzero(negsign_bool)
-    # pred_negsign_bool = pred[indices] < 0.0
-    # nmb_negsign_pred = torch.count_nonzero(pred_negsign_bool)
-    # negsign_recall = nmb_negsign_pred / (nmb_negsign_gt + 1e-15)
-    # metrics.append(negsign_recall.item())
-
-
-    # sklearn regression metrics
+    # Convert to numpy for sklearn metrics
     gt, pred = gt.cpu().detach().numpy(), pred.cpu().detach().numpy()
 
-    metrics.append(mean_absolute_error(gt, pred))
-    metrics.append(max_error(gt, pred))
-    metrics.append(mean_squared_error(gt, pred))
-    metrics.append(r2_score(gt, pred))
-    
-    return np.array(metrics)
+    metrics["mae"] = mean_absolute_error(gt, pred)
+    metrics["max_error"] = max_error(gt, pred)
+    metrics["mse"] = mean_squared_error(gt, pred)
+    metrics["r2"] = r2_score(gt, pred)
+
+    return metrics
