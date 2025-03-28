@@ -135,7 +135,7 @@ class SPNHandler:
 
             with torch.no_grad():
                 outs = self._model(data_gt)
-                loss = self._loss_func(outs, label_gt)
+                loss = self._loss_func(outs[0], label_gt[0]) + self._loss_func(outs[1], label_gt[1])
 
             running_loss += loss.cpu().item()
             running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
