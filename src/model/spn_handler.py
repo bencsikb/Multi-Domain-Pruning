@@ -17,7 +17,7 @@ class SPNHandler:
         self._model_conf = conf.model
         self._device = self._conf.train.device
 
-        self._label_keys = {"spars": 0, "dmap": 1}
+        self._label_keys = {"spars": 0, "dmap": 0} # dummy
 
         self._model = None
                 
@@ -98,21 +98,11 @@ class SPNHandler:
                 self._optimizer.step()
 
                 running_loss += loss.cpu().item()
-
-                for key, idx in self._label_keys.items():
-                    metrics_dict = calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
-
-                    # Initialize nested metric names if missing
-                    for metric_name, value in metrics_dict.items():
-                        if metric_name not in running_metrics[key]:
-                            running_metrics[key][metric_name] = 0.0
-                        running_metrics[key][metric_name] += value
+                running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
 
             # Average loss and metrics
             running_loss /= len(train_dataloader)
-            for key in running_metrics:
-                for metric_name in running_metrics[key]:
-                    running_metrics[key][metric_name] /= len(train_dataloader)
+            running_metrics = self._average_metrics(running_metrics, train_dataloader)           
 
             # Validation
             if epoch % self._conf.train.val_freq == 0:
@@ -123,7 +113,6 @@ class SPNHandler:
             self._tb_handler.log_scalar(val_loss, epoch, name="loss", tag_ext="val")
             self._tb_handler.log_dict_as_scalars(running_metrics, epoch, tag_ext="train")
             self._tb_handler.log_dict_as_scalars(val_metrics, epoch, tag_ext="val")
-
 
             # Epoch step
             self._lr_scheduler.step()
@@ -145,29 +134,40 @@ class SPNHandler:
                 loss = self._loss_func(outs, label_gt)
 
             running_loss += loss.cpu().item()
-
-            for key, idx in self._label_keys.items():
-                metrics_dict = calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
-
-                # Accumulate each metric individually
-                for metric_name, value in metrics_dict.items():
-                    if metric_name not in running_metrics[key]:
-                        running_metrics[key][metric_name] = 0.0
-                    running_metrics[key][metric_name] += value
+            running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
 
         # Compute average loss and metrics over the dataset
         running_loss /= len(dataloader)
-        for key in running_metrics:
-            for metric_name in running_metrics[key]:
-                running_metrics[key][metric_name] /= len(dataloader)
+        running_metrics = self._average_metrics(running_metrics, dataloader)     
 
         return running_loss, running_metrics
 
     
 
+    def _calculate_metrics(self, outs, label_gt, running_metrics):
+        for key, idx in self._label_keys.items():
+            metrics_dict = calculate_metrics(outs[:, idx:idx+1], label_gt[:, idx:idx+1])
+
+            # Initialize nested metric names if missing
+            for metric_name, value in metrics_dict.items():
+                if metric_name not in running_metrics[key]:
+                    running_metrics[key][metric_name] = 0.0
+                running_metrics[key][metric_name] += value
+        
+        return running_metrics
+
+    def _average_metrics(self, running_metrics, dataloader):
+        # Should be called at the end of the epoch
+        
+        for key in running_metrics:
+                for metric_name in running_metrics[key]:
+                    running_metrics[key][metric_name] /= len(dataloader)
+        
+        return running_metrics
+    
+    
     def save_metrics():
         pass
-
 
     @property
     def model(self) -> nn.Module:
