@@ -10,10 +10,10 @@ from utils.losses import LogCoshLoss
 
 
 class SPNHandler:
-    def __init__(self, conf, tb_writer) -> None:
+    def __init__(self, conf, tb_handler) -> None:
 
         self._conf = conf
-        self._tb_writer = tb_writer
+        self._tb_handler = tb_handler
         self._model_conf = conf.model
         self._device = self._conf.train.device
 
@@ -119,19 +119,11 @@ class SPNHandler:
                 val_loss, val_metrics = self.evaluate(val_dataloader)
 
             # Tensorboard logging
-            self._tb_writer.add_scalar("train_loss", running_loss, epoch)
-            self._tb_writer.add_scalar("val_loss", val_loss, epoch)
-            # Log training metrics
-            for label_key in running_metrics:
-                for metric_name, value in running_metrics[label_key].items():
-                    tag = f"train/{label_key}/{metric_name}"
-                    self._tb_writer.add_scalar(tag, value, epoch)
+            self._tb_handler.log_scalar(running_loss, epoch, name="loss", tag_ext="train")
+            self._tb_handler.log_scalar(val_loss, epoch, name="loss", tag_ext="val")
+            self._tb_handler.log_dict_as_scalars(running_metrics, epoch, tag_ext="train")
+            self._tb_handler.log_dict_as_scalars(val_metrics, epoch, tag_ext="val")
 
-            # Log validation metrics
-            for label_key in val_metrics:
-                for metric_name, value in val_metrics[label_key].items():
-                    tag = f"val/{label_key}/{metric_name}"
-                    self._tb_writer.add_scalar(tag, value, epoch)
 
             # Epoch step
             self._lr_scheduler.step()

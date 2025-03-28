@@ -1,8 +1,8 @@
 import os 
 import argparse
-from torch.utils.tensorboard import SummaryWriter
 
 from utils.config_parser import ConfigParser
+from utils.tensorboard_handler import TensorboardHandler
 from src.model.spn_handler import SPNHandler
 from state_predictor.dataloader import create_pruning_dataloader
 
@@ -18,14 +18,14 @@ if __name__ == "__main__":
     # ConfigParser.save(conf, os.path.join(conf.samples.save_path, "settings.ini"))
 
     # create loggers (rl, tb, txt)
-    tb_writer = SummaryWriter(log_dir=os.path.join(conf.save.root, args.name))
+    tb_handler = TensorboardHandler(log_dir=os.path.join(conf.save.root, args.name))
 
     # create dataloaders
     train_dataloader = create_pruning_dataloader(conf, split_type="train")
     # val_dataloader = ..
 
     # load or define SPN model
-    spn_handler = SPNHandler(conf, tb_writer)
+    spn_handler = SPNHandler(conf, tb_handler)
     spn_handler.create()
     spn_handler.train(train_dataloader, train_dataloader)
 
