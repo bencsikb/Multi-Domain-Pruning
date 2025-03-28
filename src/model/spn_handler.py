@@ -100,7 +100,7 @@ class SPNHandler:
                 running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
 
             # Average loss and metrics
-            self._train_loss /= len(train_dataloader)
+            self._train_loss = running_loss / len(train_dataloader)
             self._train_metrics = self._average_metrics(running_metrics, train_dataloader)           
 
             # Validation
@@ -108,7 +108,9 @@ class SPNHandler:
                 self._val_loss, self._val_metrics = self.evaluate(val_dataloader)
 
             # Tensorboard logging
+            self._epoch = epoch
             self._log_results_to_tensorboard()
+            self.save_checkpoint()
 
             # Epoch step
             self._lr_scheduler.step()
