@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.nn as nn
+from tqdm import tqdm
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from utils.tensorboard_handler import TensorboardHandler
@@ -79,14 +80,16 @@ class SPNHandler:
         epochs = self._conf.train.epochs
         epoch = 0
 
-        while epoch < epochs:         
+        while epoch < epochs:
             self._model.train()
 
             running_loss = 0.0
-            # Properly initialize running_metrics with sub-dicts for each label key
             running_metrics = {key: {} for key in self._label_keys}
 
-            for batch_i, (data_gt, label_gt) in enumerate(train_dataloader):
+            # Wrap the dataloader in tqdm for a progress bar
+            pbar = tqdm(enumerate(train_dataloader), total=len(train_dataloader), desc=f"Epoch {epoch+1}/{epochs}")
+
+            for batch_i, (data_gt, label_gt) in pbar:
                 data_gt = data_gt.type(torch.float32).to(self._device)
                 label_gt = label_gt.type(torch.float32).to(self._device)
 
@@ -96,24 +99,27 @@ class SPNHandler:
                 loss.backward()
                 self._optimizer.step()
 
-                running_loss += loss.cpu().item()
+                batch_loss = loss.cpu().item()
+                running_loss += batch_loss
                 running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
+
+                # Update tqdm progress bar with current batch loss
+                pbar.set_postfix(loss=f"{batch_loss:.4f}")
 
             # Average loss and metrics
             self._train_loss = running_loss / len(train_dataloader)
-            self._train_metrics = self._average_metrics(running_metrics, train_dataloader)           
+            self._train_metrics = self._average_metrics(running_metrics, train_dataloader)
 
             # Validation
             if epoch % self._conf.train.val_freq == 0:
                 self._val_loss, self._val_metrics = self.evaluate(val_dataloader)
 
-            # Tensorboard logging
+            # Logging and checkpoint
             self._epoch = epoch
             self._log_results_to_tensorboard()
             self.save_checkpoint()
-
-            # Epoch step
             self._lr_scheduler.step()
+
             epoch += 1
 
     def evaluate(self, dataloader: DataLoader) -> tuple:
