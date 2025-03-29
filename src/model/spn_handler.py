@@ -2,20 +2,22 @@ import os
 import torch
 import torch.nn as nn
 from tqdm import tqdm
+from typing import Tuple        
 from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from utils.tensorboard_handler import TensorboardHandler
 
 from state_predictor.model import SPN
-from state_predictor.utils import calculate_metrics
+from state_predictor.utils import calculate_metrics, denormalize
 from utils.losses import LogCoshLoss
 
 
 class SPNHandler:
-    def __init__(self, conf, log_dir) -> None:
+    def __init__(self, conf, run_name) -> None:
 
         self._conf = conf
-        self._log_dir_path = log_dir
+        self._run_name = run_name
+        self._log_dir_path = os.path.join(conf.save.root, run_name)
         self._model_conf = conf.model
         self._device = self._conf.train.device
 
@@ -25,15 +27,16 @@ class SPNHandler:
         self._tb_handler = TensorboardHandler(log_dir=self._log_dir_path)
                 
     
-    def create(self, checkpoint_path=None) -> None:
+    def create(self, is_pretrained=False) -> None:
 
-        if checkpoint_path is not None:
+        self._model = SPN(self._model_conf.input_size, self._model_conf.output_size)
+        self._optimizer = self._get_optimizer()
+        self._loss_func = self._get_loss_function()
+        self._lr_scheduler = self._get_lr_scheduler()  
+
+        if is_pretrained:
             self.load_checkpoint()
-        else:
-            self._model = SPN(self._model_conf.input_size, self._model_conf.output_size)
-            self._optimizer = self._get_optimizer()
-            self._loss_func = self._get_loss_function()
-            self._lr_scheduler = self._get_lr_scheduler()     
+         
 
         self._model.to(self._device)
 
@@ -122,7 +125,7 @@ class SPNHandler:
 
             epoch += 1
 
-    def evaluate(self, dataloader: DataLoader) -> tuple:
+    def evaluate(self, dataloader: DataLoader) -> Tuple:
         self._model.eval()
 
         running_loss = 0.0
@@ -145,6 +148,21 @@ class SPNHandler:
         running_metrics = self._average_metrics(running_metrics, dataloader)     
 
         return running_loss, running_metrics
+    
+    
+    def predict(self, data_gt: torch.Tensor) -> Tuple:
+
+        self._model.eval()
+
+        data_gt = data_gt.type(torch.float32).to(self._device)
+        with torch.no_grad():
+            outs = self._model(data_gt)   
+
+        outs = outs.squeeze()
+        pred_spars =  denormalize(outs[0], value_range=(0, 1))
+        pred_dmap = denormalize(outs[1], value_range=(0, 1))
+        
+        return pred_spars, pred_dmap        
 
     
     

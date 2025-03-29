@@ -36,7 +36,7 @@ if __name__ == "__main__":
     val_dataloader = create_pruning_dataloader(conf, split_type="validation")
 
     # load or define SPN model
-    spn_handler = SPNHandler(conf, log_dir)
+    spn_handler = SPNHandler(conf, run_name)
     spn_handler.create()
     spn_handler.train(train_dataloader, val_dataloader)
 
