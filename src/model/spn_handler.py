@@ -21,7 +21,7 @@ class SPNHandler:
         self._model_conf = conf.model
         self._device = self._conf.train.device
 
-        self._label_keys = {"spars": 0, "dmap": 0} # dummy
+        self._label_keys = {"spars": 0, "dmap": 1} 
 
         self._model = None
         self._tb_handler = TensorboardHandler(log_dir=self._log_dir_path)
@@ -98,7 +98,7 @@ class SPNHandler:
 
                 self._optimizer.zero_grad()
                 outs = self._model(data_gt)
-                loss = self._loss_func(outs[0], label_gt[0]) + self._loss_func(outs[1], label_gt[1])
+                loss = self._loss_func(outs[:,0], label_gt[:,0]) + self._loss_func(outs[:,1], label_gt[:,1])
                 loss.backward()
                 self._optimizer.step()
 
@@ -138,7 +138,7 @@ class SPNHandler:
 
             with torch.no_grad():
                 outs = self._model(data_gt)
-                loss = self._loss_func(outs[0], label_gt[0]) + self._loss_func(outs[1], label_gt[1])
+                loss = self._loss_func(outs[:,0], label_gt[:,0]) + self._loss_func(outs[:,1], label_gt[:,1])
 
             running_loss += loss.cpu().item()
             running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
