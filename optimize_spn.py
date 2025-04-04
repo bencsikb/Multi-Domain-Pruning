@@ -19,7 +19,7 @@ def objective(trial):
         'start_lr', [c * 10**-e for e in range(2, 7) for c in range(1, 10)]
     )
     weight_decay = trial.suggest_categorical(
-        'start_lr', [c * 10**-e for e in range(2, 7) for c in range(1, 10)]
+        'weight_decay', [c * 10**-e for e in range(2, 7) for c in range(1, 10)]
     )
     momentum = trial.suggest_uniform('momentum', 0.5, 0.99) if optimizer_type == 'sgd' else None
     #spars_loss_weight = trial.suggest_float('spars_loss_weight', 0.1, 1.0, step=0.1)
