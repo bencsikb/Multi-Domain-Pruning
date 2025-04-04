@@ -87,9 +87,10 @@ class SPNHandler:
             self._model.train()
 
             running_loss = 0.0
+            running_spars_loss = 0.0
+            running_dmap_loss = 0.0
             running_metrics = {key: {} for key in self._label_keys}
 
-            # Wrap the dataloader in tqdm for a progress bar
             pbar = tqdm(enumerate(train_dataloader), total=len(train_dataloader), desc=f"Epoch {epoch+1}/{epochs}")
 
             for batch_i, (data_gt, label_gt) in pbar:
@@ -98,20 +99,25 @@ class SPNHandler:
 
                 self._optimizer.zero_grad()
                 outs = self._model(data_gt)
-                loss = (self._conf.model.spars_loss_weight * self._loss_func(outs[:,0], label_gt[:,0]) +
-                        self._conf.model.dmap_loss_weight * self._loss_func(outs[:,1], label_gt[:,1]))
+
+                spars_loss = self._loss_func(outs[:,0], label_gt[:,0])
+                dmap_loss = self._loss_func(outs[:,1], label_gt[:,1])
+                loss = self._conf.model.spars_loss_weight * spars_loss + self._conf.model.dmap_loss_weight * dmap_loss
+
                 loss.backward()
                 self._optimizer.step()
 
-                batch_loss = loss.cpu().item()
-                running_loss += batch_loss
+                running_loss += loss.cpu().item()
+                running_spars_loss += spars_loss.cpu().item()
+                running_dmap_loss += dmap_loss.cpu().item()
                 running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
 
-                # Update tqdm progress bar with current batch loss
-                pbar.set_postfix(loss=f"{batch_loss:.4f}")
+                pbar.set_postfix(loss=f"{loss.cpu().item():.4f}", spars_loss=f"{spars_loss.cpu().item():.4f}", dmap_loss=f"{dmap_loss.cpu().item():.4f}")
 
             # Average loss and metrics
             self._train_loss = running_loss / len(train_dataloader)
+            self._train_spars_loss = running_spars_loss / len(train_dataloader)
+            self._train_dmap_loss = running_dmap_loss / len(train_dataloader)
             self._train_metrics = self._average_metrics(running_metrics, train_dataloader)
 
             # Validation
@@ -130,6 +136,8 @@ class SPNHandler:
         self._model.eval()
 
         running_loss = 0.0
+        running_spars_loss = 0.0
+        running_dmap_loss = 0.0
         # Initialize metric containers for each label key
         running_metrics = {key: {} for key in self._label_keys}
 
@@ -139,14 +147,18 @@ class SPNHandler:
 
             with torch.no_grad():
                 outs = self._model(data_gt)
-                loss = (self._conf.model.spars_loss_weight * self._loss_func(outs[:,0], label_gt[:,0]) +
-                        self._conf.model.dmap_loss_weight * self._loss_func(outs[:,1], label_gt[:,1]))
+                spars_loss = self._loss_func(outs[:,0], label_gt[:,0])
+                dmap_loss = self._loss_func(outs[:,1], label_gt[:,1])
+                loss = self._conf.model.spars_loss_weight * spars_loss + self._conf.model.dmap_loss_weight * dmap_loss
 
             running_loss += loss.cpu().item()
+            # running_spars_loss += spars_loss.cpu().item()
+            # running_dmap_loss += dmap_loss.cpu().item()
             running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
 
         # Compute average loss and metrics over the dataset
         running_loss /= len(dataloader)
+
         running_metrics = self._average_metrics(running_metrics, dataloader)     
 
         return running_loss, running_metrics
@@ -217,7 +229,11 @@ class SPNHandler:
     def _log_results_to_tensorboard(self):
 
         self._tb_handler.log_scalar(self._train_loss, self._epoch, name="loss", tag_ext="train")
+        self._tb_handler.log_scalar(self._train_spars_loss, self._epoch, name="spars_loss", tag_ext="train")
+        self._tb_handler.log_scalar(self._train_dmap_loss, self._epoch, name="dmap_loss", tag_ext="train")
+
         self._tb_handler.log_scalar(self._val_loss, self._epoch, name="loss", tag_ext="val")
+        
         self._tb_handler.log_dict_as_scalars(self._train_metrics, self._epoch, tag_ext="train")
         self._tb_handler.log_dict_as_scalars(self._val_metrics, self._epoch, tag_ext="val")
 
