@@ -1,5 +1,5 @@
 import os
-from typing import Any
+from typing import Any, Dict
 from torch.utils.tensorboard import SummaryWriter
 
 
@@ -19,3 +19,16 @@ class TensorboardHandler():
         
         tag = f"{tag_ext}/{tag_ext}/{name}"
         self._writer.add_scalar(tag, metric, epoch)
+
+    def log_hparams(self, hparams: Dict[str, Any], metric_dict) -> None:
+        """
+        Log hyperparameters using TensorBoard's add_hparams function.
+
+        Args:
+            hparams (dict): Dictionary of hyperparameters to log.
+        """
+
+        self._writer.add_hparams(hparam_dict=hparams, metric_dict=metric_dict)
+
+    def close(self) -> None:
+        self._writer.close()

@@ -5,6 +5,7 @@ import uuid
 
 from utils.config_parser import ConfigParser
 from src.model.spn_handler import SPNHandler
+from utils.tensorboard_handler import TensorboardHandler
 from state_predictor.dataloader import create_pruning_dataloader
 
 def generate_run_name(prefix=""):
@@ -31,12 +32,15 @@ if __name__ == "__main__":
     # Save config
     ConfigParser.save(conf, os.path.join(log_dir, "settings.ini"))
 
+    # Create tb_handler 
+    tb_handler = TensorboardHandler(log_dir)
+
     # create dataloaders
     train_dataloader = create_pruning_dataloader(conf, split_type="training")
     val_dataloader = create_pruning_dataloader(conf, split_type="validation")
 
     # load or define SPN model
-    spn_handler = SPNHandler(conf, run_name)
+    spn_handler = SPNHandler(conf, run_name, tb_handler)
     spn_handler.create()
     spn_handler.train(train_dataloader, val_dataloader)
 

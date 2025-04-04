@@ -13,10 +13,11 @@ from utils.losses import LogCoshLoss
 
 
 class SPNHandler:
-    def __init__(self, conf, run_name) -> None:
+    def __init__(self, conf, run_name: str, tb_handler: TensorboardHandler) -> None:
 
         self._conf = conf
         self._run_name = run_name
+        self._tb_handler = tb_handler
         self._log_dir_path = os.path.join(conf.save.root, run_name)
         self._model_conf = conf.model
         self._device = self._conf.train.device
@@ -24,7 +25,6 @@ class SPNHandler:
         self._label_keys = {"spars": 0, "dmap": 1} 
 
         self._model = None
-        self._tb_handler = TensorboardHandler(log_dir=self._log_dir_path)
                 
     
     def create(self, is_pretrained=False) -> None:
@@ -98,7 +98,8 @@ class SPNHandler:
 
                 self._optimizer.zero_grad()
                 outs = self._model(data_gt)
-                loss = self._loss_func(outs[:,0], label_gt[:,0]) + self._loss_func(outs[:,1], label_gt[:,1])
+                loss = (self._conf.model.spars_loss_weight * self._loss_func(outs[:,0], label_gt[:,0]) +
+                        self._conf.model.dmap_loss_weight * self._loss_func(outs[:,1], label_gt[:,1]))
                 loss.backward()
                 self._optimizer.step()
 
@@ -138,7 +139,8 @@ class SPNHandler:
 
             with torch.no_grad():
                 outs = self._model(data_gt)
-                loss = self._loss_func(outs[:,0], label_gt[:,0]) + self._loss_func(outs[:,1], label_gt[:,1])
+                loss = (self._conf.model.spars_loss_weight * self._loss_func(outs[:,0], label_gt[:,0]) +
+                        self._conf.model.dmap_loss_weight * self._loss_func(outs[:,1], label_gt[:,1]))
 
             running_loss += loss.cpu().item()
             running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
