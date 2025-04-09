@@ -14,8 +14,8 @@ def copy_dataset_splits(csv_path, orig_image_path, orig_label_path, output_base_
     }
 
     for split, base_path in split_folders.items():
-        os.makedirs(os.path.join(base_path, "images_newsplit"), exist_ok=True)
-        os.makedirs(os.path.join(base_path, "labels_newsplit"), exist_ok=True)
+        os.makedirs(os.path.join(base_path, "data"), exist_ok=True)
+        os.makedirs(os.path.join(base_path, "label"), exist_ok=True)
 
     # Copy files to respective folders
     for _, row in df.iterrows():
@@ -24,10 +24,10 @@ def copy_dataset_splits(csv_path, orig_image_path, orig_label_path, output_base_
 
         # Define source and destination paths
         src_image = os.path.join(orig_image_path, filename)
-        src_label = os.path.join(orig_label_path, filename.replace(".png", ".txt"))  # Assuming label files are .txt
+        src_label = os.path.join(orig_label_path, filename) #.replace(".png", ".txt"))  # Assuming label files are .txt
         
-        dst_image = os.path.join(split_folders[split], "images_newsplit", filename)
-        dst_label = os.path.join(split_folders[split], "labels_newsplit", filename.replace(".png", ".txt"))
+        dst_image = os.path.join(split_folders[split], "data", filename)
+        dst_label = os.path.join(split_folders[split], "label", filename) #.replace(".png", ".txt"))
 
         # Copy image
         if os.path.exists(src_image):
@@ -39,10 +39,11 @@ def copy_dataset_splits(csv_path, orig_image_path, orig_label_path, output_base_
 
     print("Dataset successfully copied into new splits!")
 
-# Example usage
-csv_path = "dataset_splits.csv"  # Path to split CSV
-orig_image_path = "/data2/blanka/DATASETS/KITTI/original/image_2"  # Replace with actual path
-orig_label_path = "/data2/blanka/DATASETS/KITTI/original/label_2_yolo"  # Replace with actual path
-output_base_path = "/data2/blanka/DATASETS/KITTI"  # Replace with actual path
+if __name__ == "__main__":
+    # Example usage
+    csv_path = "SPN_splits.csv"  # Path to split CSV
+    orig_image_path = "/data/blanka/DATASETS/SPN/YOLOv8x_newsplit/original/data"  # Replace with actual path
+    orig_label_path = "/data/blanka/DATASETS/SPN/YOLOv8x_newsplit/original/label"   # Replace with actual path
+    output_base_path = "/data/blanka/DATASETS/SPN/YOLOv8x_train50val50/"  
 
-copy_dataset_splits(csv_path, orig_image_path, orig_label_path, output_base_path)
+    copy_dataset_splits(csv_path, orig_image_path, orig_label_path, output_base_path)
