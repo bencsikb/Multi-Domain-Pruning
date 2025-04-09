@@ -37,14 +37,13 @@ class SPNDataset(Dataset):
                  conf: SimpleNamespace, 
                  split_type: str,
                  data_folder: str = "data", 
-                 label_folder: str = "label",
-                 cache_file: str = "cache.pkl",
-                 rebuild_cache: bool = False):
+                 label_folder: str = "label"):
         
         self._conf = conf
         self._root_path = os.path.join(self._conf.data.root, split_type)
         self.data_path = os.path.join(self._root_path, data_folder)
         self.label_path = os.path.join(self._root_path, label_folder)
+        cache_file = f"cache_{self._conf.data.cache_fantasy_name}.pkl"
         self.cache_path = os.path.join(self._root_path, cache_file)
 
         # Ensure lists are sorted to maintain correspondence
@@ -58,7 +57,8 @@ class SPNDataset(Dataset):
         self.coder = self._initialize_coder()
 
         # Load cache if available, else create it
-        if os.path.exists(self.cache_path) and not rebuild_cache:
+        if self._conf.data.is_read_from_cache:
+            assert os.path.exists(self.cache_path), f"Cache file {cache_file} doesn't exist!"
             self._load_cache()
         else:
             self._build_cache()
@@ -81,6 +81,9 @@ class SPNDataset(Dataset):
             # Load state and label DataFrames
             state_df = pd.read_pickle(state_path)
             label_df = pd.read_pickle(label_path)
+
+            # Filter for selected features
+            state_df = state_df[self._conf.model.state_features]
 
             # Encode state and label using the coder instance
             encoded_state = self.coder.encode_state(state_df)

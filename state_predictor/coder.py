@@ -61,18 +61,23 @@ class Coder:
         
     def encode_state(self, state: pd.DataFrame) -> torch.Tensor:
         # shape [n_features+1, n_prunable_layers]
-        n_features = 8
-
+        n_features = len(state.columns)
         encoded_state = np.full((self.n_prunable_layers, n_features), -1.0, dtype=np.float32)
 
-        encoded_state[:, 0] = normalize(state['alpha'].values, self._alpha_range)
-        encoded_state[:, 1] = normalize(state['is_pruned'].values, self._is_pruned_range)
-        encoded_state[:, 2] = normalize(state['in_ch'].values, self._channel_range)
-        encoded_state[:, 3] = normalize(state['out_ch'].values, self._channel_range)
-        encoded_state[:, 4] = normalize(state['kernel'].values, self._kernel_range)
-        encoded_state[:, 5] = normalize(state['stride'].values, self._stride_range)
-        encoded_state[:, 6] = normalize(state['pad'].values, self._pad_range)
-        encoded_state[:, 7] = normalize(state['n_pruned_ch'].values, self._channel_range)
+        col_range_map = {
+            'alpha': (0, self._alpha_range),
+            'is_pruned': (1, self._is_pruned_range),
+            'in_ch': (2, self._channel_range),
+            'out_ch': (3, self._channel_range),
+            'kernel': (4, self._kernel_range),
+            'stride': (5, self._stride_range),
+            'pad': (6, self._pad_range),
+            'n_pruned_ch': (7, self._channel_range),
+        }
+
+        for col, (idx, range_) in col_range_map.items():
+            if col in state.columns:
+                encoded_state[:, idx] = normalize(state[col].values, range_)
 
         # Make it one-dimensional
         encoded_state = encoded_state.flatten()

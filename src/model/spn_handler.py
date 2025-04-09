@@ -29,7 +29,8 @@ class SPNHandler:
     
     def create(self, is_pretrained=False) -> None:
 
-        self._model = SPN(self._model_conf.input_size, self._model_conf.output_size)
+        input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
+        self._model = SPN(input_size, self._model_conf.output_size)
         self._optimizer = self._get_optimizer()
         self._loss_func = self._get_loss_function()
         self._lr_scheduler = self._get_lr_scheduler()  
@@ -102,9 +103,10 @@ class SPNHandler:
 
                 spars_loss = self._loss_func(outs[:,0], label_gt[:,0])
                 dmap_loss = self._loss_func(outs[:,1], label_gt[:,1])
-                loss = self._conf.model.spars_loss_weight * spars_loss + self._conf.model.dmap_loss_weight * dmap_loss
+                loss = spars_loss + dmap_loss
+                weighted_loss = self._conf.model.spars_loss_weight * spars_loss + self._conf.model.dmap_loss_weight * dmap_loss
 
-                loss.backward()
+                weighted_loss.backward()
                 self._optimizer.step()
 
                 running_loss += loss.cpu().item()
@@ -149,7 +151,7 @@ class SPNHandler:
                 outs = self._model(data_gt)
                 spars_loss = self._loss_func(outs[:,0], label_gt[:,0])
                 dmap_loss = self._loss_func(outs[:,1], label_gt[:,1])
-                loss = self._conf.model.spars_loss_weight * spars_loss + self._conf.model.dmap_loss_weight * dmap_loss
+                loss = spars_loss + dmap_loss
 
             running_loss += loss.cpu().item()
             # running_spars_loss += spars_loss.cpu().item()

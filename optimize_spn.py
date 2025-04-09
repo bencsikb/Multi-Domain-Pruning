@@ -23,7 +23,7 @@ def objective(trial):
     )
     momentum = trial.suggest_uniform('momentum', 0.5, 0.99) if optimizer_type == 'sgd' else None
     #spars_loss_weight = trial.suggest_float('spars_loss_weight', 0.1, 1.0, step=0.1)
-    #dmap_loss_weight = trial.suggest_float('spars_loss_weight', 0.1, 1.0, step=0.1)
+    dmap_loss_weight = trial.suggest_categorical('dmap_loss_weight', [0.1, 1.0, 10.0, 100.0])
 
 
     # Read config and set hyperparameters
@@ -73,7 +73,7 @@ def objective(trial):
         'weight_decay': weight_decay, 
         'momentum': momentum, 
         #'spars_loss_weight': spars_loss_weight,
-        #'dmap_loss_weight': dmap_loss_weight
+        'dmap_loss_weight': dmap_loss_weight
     },
     metric_dict=flattened_metric_dict)
 
