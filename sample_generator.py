@@ -1,7 +1,7 @@
 import os
 import logging
 
-from model.yolo_handler import ModelHandler
+from model.yolo_handler import YoloHandler
 from src.sample_handler import SampleHandler
 from src.action_handler import ActionHandler
 from utils.config_parser import ConfigParser
@@ -32,7 +32,7 @@ if __name__ == "__main__":
     sample_handler.read_all_samples()
     
     # Load model
-    model_handler = ModelHandler(conf.model)
+    model_handler = YoloHandler(conf.model)
 
     # Determine prunable layers
     # TODO load model and check of metrics are same as in the generated config file

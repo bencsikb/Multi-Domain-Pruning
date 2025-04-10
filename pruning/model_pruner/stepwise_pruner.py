@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import logging
 
-from model.yolo_handler import ModelHandler
+from model.yolo_handler import YoloHandler
 from src.sample_handler import SampleHandler
 from pruning.channel_selection.channel_selector import ChannelSelector
 from types import SimpleNamespace
@@ -11,7 +11,7 @@ from pruning.channel_selection.utils import choose_alpha
 
 class StepWisePruner():
     def __init__(self, 
-                 model_handler: ModelHandler, 
+                 model_handler: YoloHandler, 
                  sample_handler: SampleHandler,
                  conf: SimpleNamespace, 
                  channel_selector: ChannelSelector) -> None:
