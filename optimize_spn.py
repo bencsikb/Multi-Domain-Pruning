@@ -14,7 +14,7 @@ def objective(trial):
     epochs = trial.suggest_int('epochs', 200, 2000, step=100)
     batch_size = trial.suggest_categorical('batch_size', [128, 256, 512, 1024, 2048, 4096, 8192, 16384])
 
-    optimizer_type = trial.suggest_categorical('optimizer', ['adam', 'sgd', 'adamw'])
+    optimizer_type = trial.suggest_categorical('optimizer', ['adam', 'adamw'])
     start_lr = trial.suggest_categorical(
         'start_lr', [c * 10**-e for e in range(2, 7) for c in range(1, 10)]
     )
@@ -78,9 +78,7 @@ def objective(trial):
     metric_dict=flattened_metric_dict)
 
 
-
-
-    return val_loss
+    return flattened_metric_dict["dmap.mae"] #val_loss
 
 
 if __name__ == '__main__':
