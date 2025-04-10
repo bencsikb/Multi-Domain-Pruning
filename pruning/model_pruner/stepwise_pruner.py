@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import logging
 
-from src.model.model_handler import ModelHandler
+from model.yolo_handler import ModelHandler
 from src.sample_handler import SampleHandler
 from pruning.channel_selection.channel_selector import ChannelSelector
 from types import SimpleNamespace

@@ -1,7 +1,7 @@
 import os
 import logging
 
-from src.model.model_handler import ModelHandler
+from model.yolo_handler import ModelHandler
 from src.sample_handler import SampleHandler
 from src.action_handler import ActionHandler
 from utils.config_parser import ConfigParser
