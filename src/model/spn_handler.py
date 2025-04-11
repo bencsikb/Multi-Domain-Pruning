@@ -3,14 +3,11 @@ import torch
 import torch.nn as nn
 from tqdm import tqdm
 from typing import Tuple        
-from torch.optim import Optimizer
 from torch.utils.data import DataLoader
-from utils.tensorboard_handler import TensorboardHandler
 
+from utils.tensorboard_handler import TensorboardHandler
 from state_predictor.model import SPN
 from state_predictor.utils import calculate_metrics, denormalize
-from utils.losses import LogCoshLoss
-
 
 class SPNHandler:
     def __init__(self, conf, run_name: str, tb_handler: TensorboardHandler) -> None:
@@ -29,11 +26,13 @@ class SPNHandler:
     
     def create(self, is_pretrained=False) -> None:
 
+        from src.training_components import get_loss_function, get_optimizer, get_lr_scheduler
+
         input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
         self._model = SPN(input_size, self._model_conf.output_size)
-        self._optimizer = self._get_optimizer()
-        self._loss_func = self._get_loss_function()
-        self._lr_scheduler = self._get_lr_scheduler()  
+        self._optimizer = get_optimizer()
+        self._loss_func = get_loss_function()
+        self._lr_scheduler = get_lr_scheduler()  
 
         if is_pretrained:
             self.load_checkpoint()
@@ -41,44 +40,7 @@ class SPNHandler:
 
         self._model.to(self._device)
 
-
-    def _get_loss_function(self) : #TODO ret type
-        
-        if self._model_conf.loss == "logcosh":
-            loss_func = LogCoshLoss()
-        
-        return loss_func
-    
-    def _get_optimizer(self) -> Optimizer:
-
-        if self._model_conf.optimizer == "adam":
-            optimizer = torch.optim.Adam(self._model.parameters(), 
-                                         lr=self._model_conf.start_lr,
-                                         weight_decay=self._model_conf.weight_decay)
-        elif self._model_conf.optimizer == "sgd":
-            optimizer = torch.optim.SGD(self._model.parameters(),
-                                lr=self._model_conf.start_lr,
-                                momentum=self._model_conf.momentum,
-                                weight_decay=self._model_conf.weight_decay)
-
-        elif self._model_conf.optimizer == "adamw":
-            optimizer = torch.optim.AdamW(self._model.parameters(),
-                                    lr=self._model_conf.start_lr,
-                                    weight_decay=self._model_conf.weight_decay)
-
-        return optimizer
-
-
-    def _get_lr_scheduler(self):
-        
-        if self._model_conf.lr_scheduler == "cos":
-            lr_sched = torch.optim.lr_scheduler.CosineAnnealingLR(self._optimizer,
-                                                                  T_max=self._conf.train.epochs,
-                                                                  eta_min=0.000005,
-                                                                  last_epoch=-1)
-
-        return lr_sched
-
+ 
     
     def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader):
         epochs = self._conf.train.epochs
