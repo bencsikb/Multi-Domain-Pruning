@@ -34,6 +34,7 @@ class SPNHandler:
         self._optimizer = get_optimizer(type = self._model_conf.optimizer,
                                         model = self._model,
                                         lr = self._model_conf.start_lr,
+                                        weight_decay = self._model_conf.weight_decay,
                                         momentum=self._model_conf.momentum if self._model_conf.optimizer=="sgd" else None)
         self._loss_func = get_loss_function(type=self._model_conf.loss)
         self._lr_scheduler = get_lr_scheduler(type = self._model_conf.lr_scheduler,
