@@ -2,7 +2,7 @@ import os
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from typing import Tuple        
+from typing import Tuple , List      
 from torch.utils.data import DataLoader
 
 from utils.tensorboard_handler import TensorboardHandler
@@ -20,6 +20,7 @@ class SPNHandler:
         self._device = self._conf.train.device
 
         self._label_keys = {"spars": 0, "dmap": 1} 
+        self._state_features = self._model_conf.state_features
 
         self._model = None
                 
@@ -28,11 +29,16 @@ class SPNHandler:
 
         from src.training_components import get_loss_function, get_optimizer, get_lr_scheduler
 
-        input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
+        input_size = self._model_conf.n_prunable_layers * len(self._state_features)
         self._model = SPN(input_size, self._model_conf.output_size)
-        self._optimizer = get_optimizer()
-        self._loss_func = get_loss_function()
-        self._lr_scheduler = get_lr_scheduler()  
+        self._optimizer = get_optimizer(type = self._model_conf.optimizer,
+                                        model = self._model,
+                                        lr = self._model_conf.start_lr,
+                                        momentum=self._model_conf.momentum if self._model_conf.optimizer=="sgd" else None)
+        self._loss_func = get_loss_function(type=self._model_conf.loss)
+        self._lr_scheduler = get_lr_scheduler(type = self._model_conf.lr_scheduler,
+                                              epochs = self._conf.train.epochs,
+                                               optimizer = self._optimizer)  
 
         if is_pretrained:
             self.load_checkpoint()
@@ -209,7 +215,10 @@ class SPNHandler:
     @property
     def device(self) -> str:
         return self._device
-
+    
+    @property 
+    def state_features(self) -> List[str]:
+        return self._state_features
 
 
 
