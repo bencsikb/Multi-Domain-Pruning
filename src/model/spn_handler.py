@@ -7,9 +7,10 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from utils.tensorboard_handler import TensorboardHandler
 
-from state_predictor.model import SPN
+from state_predictor.model import SPN, SPNMultihead
 from state_predictor.utils import calculate_metrics, denormalize
 from utils.losses import LogCoshLoss
+from utils.common_utils import set_seed
 
 
 class SPNHandler:
@@ -25,21 +26,24 @@ class SPNHandler:
         self._label_keys = {"spars": 0, "dmap": 1} 
 
         self._model = None
+        set_seed(self._conf.train.seed)
                 
     
-    def create(self, is_pretrained=False) -> None:
+    def create(self) -> None:
 
         input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
-        self._model = SPN(input_size, self._model_conf.output_size)
+        self._model = SPNMultihead(input_size)
         self._optimizer = self._get_optimizer()
         self._loss_func = self._get_loss_function()
         self._lr_scheduler = self._get_lr_scheduler()  
 
-        if is_pretrained:
-            self.load_checkpoint()
-         
-
         self._model.to(self._device)
+        self._loss_func.to(self._device)
+
+        if len(self._model_conf.pretrained):
+            self.load_checkpoint(self._model_conf.pretrained)
+        
+        self._freeze_model_parts_if_specified()
 
 
     def _get_loss_function(self) : #TODO ret type
@@ -202,6 +206,19 @@ class SPNHandler:
                     running_metrics[key][metric_name] /= len(dataloader)
         
         return running_metrics
+
+    def _freeze_model_parts_if_specified(self):
+        if getattr(self._model_conf, "do_freeze_backend", False):
+            for param in self._model.backend.parameters():
+                param.requires_grad = False
+
+        if getattr(self._model_conf, "do_freeze_head_spars", False):
+            for param in self._model.head_spars.parameters():
+                param.requires_grad = False
+
+        if getattr(self._model_conf, "do_freeze_head_dmap", False):
+            for param in self._model.head_dmap.parameters():
+                param.requires_grad = False
     
 
     def save_checkpoint(self):
@@ -212,14 +229,14 @@ class SPNHandler:
             'scheduler_state_dict': self._lr_scheduler.state_dict(),
             'loss': self._loss_func,
         }
-        torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint"))
+        torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint.pt"))
     
     
-    def load_checkpoint(self, checkpoint_path=None):
-        if checkpoint_path is None:
-            checkpoint_path = os.path.join(self._log_dir_path, "checkpoint")
+    def load_checkpoint(self, path):
 
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
+        checkpoint_path = os.path.join(path, "checkpoint")
+
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
         self._model.load_state_dict(checkpoint['model_state_dict'])
         self._optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
