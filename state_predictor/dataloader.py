@@ -85,12 +85,16 @@ class SPNDataset(Dataset):
             # Filter for selected features
             state_df = state_df[self._conf.model.state_features]
 
+            # Get state and label without  sclaing
+            state = self.coder.encode_state(state_df, do_normalize=False)
+            label = self.coder.encode_label(label_df, do_normalize=False)            
+
             # Encode state and label using the coder instance
             encoded_state = self.coder.encode_state(state_df)
             encoded_label = self.coder.encode_label(label_df)
 
             # Store in cache
-            self.cache[index] = (encoded_state, encoded_label)
+            self.cache[index] = (encoded_state, encoded_label) #, state, label)
 
         # Save cache to file
         with open(self.cache_path, "wb") as f:
@@ -111,8 +115,10 @@ class SPNDataset(Dataset):
     @staticmethod
     def collate_fn(batch):
         """Custom collate function for batching."""
+        #data, label, datao, labelo = zip(*batch)
         data, label = zip(*batch)
-        return torch.stack(data, 0), torch.stack(label, 0)
+
+        return torch.stack(data, 0), torch.stack(label, 0) #, torch.stack(datao, 0), torch.stack(labelo, 0)
 
     def clear_cache(self):
         """Deletes the cache file and clears in-memory cache."""

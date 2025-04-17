@@ -8,12 +8,12 @@ from torch.utils.data import DataLoader
 from utils.tensorboard_handler import TensorboardHandler
 
 from state_predictor.model import SPN
-from state_predictor.utils import calculate_metrics, denormalize
+from state_predictor.spn import calculate_metrics, denormalize
 from utils.losses import LogCoshLoss
 
 
 class SPNHandler:
-    def __init__(self, conf, run_name: str, tb_handler: TensorboardHandler) -> None:
+    def __init__(self, conf, run_name: str, tb_handler: TensorboardHandler = None) -> None:
 
         self._conf = conf
         self._run_name = run_name
@@ -112,7 +112,8 @@ class SPNHandler:
                 running_loss += loss.cpu().item()
                 running_spars_loss += spars_loss.cpu().item()
                 running_dmap_loss += dmap_loss.cpu().item()
-                running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
+                dummy_outs = torch.full_like(label_gt, fill_value=-1.0)  # or 1.0, etc.
+                running_metrics = self._calculate_metrics(dummy_outs, label_gt, running_metrics)
 
                 pbar.set_postfix(loss=f"{loss.cpu().item():.4f}", spars_loss=f"{spars_loss.cpu().item():.4f}", dmap_loss=f"{dmap_loss.cpu().item():.4f}")
 
@@ -156,7 +157,8 @@ class SPNHandler:
             running_loss += loss.cpu().item()
             # running_spars_loss += spars_loss.cpu().item()
             # running_dmap_loss += dmap_loss.cpu().item()
-            running_metrics = self._calculate_metrics(outs, label_gt, running_metrics)
+            dummy_outs = torch.full_like(label_gt, fill_value=-1.0)  # or 1.0, etc.
+            running_metrics = self._calculate_metrics(dummy_outs, label_gt, running_metrics)
 
         # Compute average loss and metrics over the dataset
         running_loss /= len(dataloader)

@@ -4,7 +4,7 @@ import pandas as pd
 from pandas.core.series import Series
 from typing import Tuple
 
-from state_predictor.utils import normalize
+from state_predictor.spn import normalize
 
 
 class Coder:
@@ -59,7 +59,7 @@ class Coder:
         """
         pass
         
-    def encode_state(self, state: pd.DataFrame) -> torch.Tensor:
+    def encode_state(self, state: pd.DataFrame, do_normalize: bool = True) -> torch.Tensor:
         # shape [n_features+1, n_prunable_layers]
         n_features = len(state.columns)
         encoded_state = np.full((self.n_prunable_layers, n_features), -1.0, dtype=np.float32)
@@ -77,7 +77,10 @@ class Coder:
 
         for col, (idx, range_) in col_range_map.items():
             if col in state.columns:
-                encoded_state[:, idx] = normalize(state[col].values, range_)
+                if do_normalize:
+                    encoded_state[:, idx] = normalize(state[col].values, range_)
+                else: 
+                    encoded_state[:, idx] = state[col].values
 
         # Make it one-dimensional
         encoded_state = encoded_state.flatten()
@@ -86,14 +89,18 @@ class Coder:
 
 
     
-    def encode_label(self, label: pd.DataFrame) -> torch.Tensor:
+    def encode_label(self, label: pd.DataFrame, do_normalize: bool = True) -> torch.Tensor:
         # [sparsity, dmap]
         encoded_label = torch.zeros([2])  
 
         sparsity = self._calculate_spars(label['n_params'], label['n_params_init'])
         dmap = self._calculate_dmap(label['map50'], label['map50_init'])
-        encoded_label[0] = normalize(sparsity, value_range=(0, 1))
-        encoded_label[1] = normalize(dmap, value_range=(0, 1))
+        if do_normalize: 
+            encoded_label[0] = normalize(sparsity, value_range=(0, 1))
+            encoded_label[1] = normalize(dmap, value_range=(0, 1))
+        else:
+            encoded_label[0] = sparsity
+            encoded_label[1] = dmap
         
         return torch.Tensor(encoded_label)
 
