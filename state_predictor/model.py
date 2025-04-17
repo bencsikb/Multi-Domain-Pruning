@@ -21,3 +21,47 @@ class SPN(nn.Module):
         x4 = self.L4(x3)
 
         return x4
+
+
+class SPNMultihead(nn.Module):
+    def __init__(self, Nin):
+        super(SPNMultihead, self).__init__()
+
+        # Shared trunk
+        self.backend = nn.Sequential(
+            nn.Linear(Nin, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU()
+        )
+
+        # Head for spars
+        self.head_spars = nn.Sequential(
+            nn.Linear(256, 1)
+        )
+
+        # Head for dmap
+        self.head_dmap = nn.Sequential(
+            nn.Linear(256, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(),
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(),
+            nn.Linear(256, 1)
+        )
+
+    def forward(self, x):
+        shared_out = self.backend(x)
+
+        out_spars = self.head_spars(shared_out)
+        out_dmap = self.head_dmap(shared_out)
+
+        # return shape: (batch, 2)
+        return torch.cat([out_spars, out_dmap], dim=1)
+
