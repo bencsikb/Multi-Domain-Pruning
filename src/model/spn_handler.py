@@ -234,7 +234,7 @@ class SPNHandler:
     
     def load_checkpoint(self, path):
 
-        checkpoint_path = os.path.join(path, "checkpoint")
+        checkpoint_path = os.path.join(path, "checkpoint.pt")
 
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
