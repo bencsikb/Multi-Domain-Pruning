@@ -60,32 +60,39 @@ class Coder:
         pass
         
     def encode_state(self, state: pd.DataFrame) -> torch.Tensor:
-        # shape [n_features+1, n_prunable_layers]
-        n_features = len(state.columns)
-        encoded_state = np.full((self.n_prunable_layers, n_features), -1.0, dtype=np.float32)
-
+        """
+        Encode pruning state DataFrame into a 1D tensor.
+        
+        Returns:
+            torch.Tensor of shape [n_prunable_layers * n_active_features]
+        """
         col_range_map = {
-            'alpha': (0, self._alpha_range),
-            'is_pruned': (1, self._is_pruned_range),
-            'in_ch': (2, self._channel_range),
-            'out_ch': (3, self._channel_range),
-            'kernel': (4, self._kernel_range),
-            'stride': (5, self._stride_range),
-            'pad': (6, self._pad_range),
-            'n_pruned_ch': (7, self._channel_range),
+            'alpha': self._alpha_range,
+            'is_pruned': self._is_pruned_range,
+            'in_ch': self._channel_range,
+            'out_ch': self._channel_range,
+            'kernel': self._kernel_range,
+            'stride': self._stride_range,
+            'pad': self._pad_range,
+            'n_pruned_ch': self._channel_range,
         }
 
-        for col, (idx, range_) in col_range_map.items():
+        encoded_state = []
+
+        for col, range_ in col_range_map.items():
             if col in state.columns:
-                encoded_state[:, idx] = normalize(state[col].values, range_)
+                normalized = normalize(state[col].values, range_).astype(np.float32)  # shape [n_prunable_layers]
+                encoded_state.append(normalized)  
 
-        # Make it one-dimensional
-        encoded_state = encoded_state.flatten()
+        if not encoded_state:
+            raise ValueError("No recognized columns found in the input state DataFrame.")
 
-        return torch.tensor(encoded_state, dtype=torch.float32)
+        # Stack to shape [n_features_used, n_prunable_layers] → transpose to [n_prunable_layers, n_features_used]
+        encoded_matrix = np.stack(encoded_state, axis=0).T
+
+        return torch.tensor(encoded_matrix.flatten(), dtype=torch.float32)
 
 
-    
     def encode_label(self, label: pd.DataFrame) -> torch.Tensor:
         # [sparsity, dmap]
         encoded_label = torch.zeros([2])  
