@@ -7,9 +7,10 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from utils.tensorboard_handler import TensorboardHandler
 
-from state_predictor.model import SPN
+from state_predictor.model import SPN, SPNMultihead
 from state_predictor.spn import calculate_metrics, denormalize
 from utils.losses import LogCoshLoss
+from utils.common_utils import set_seed
 
 
 class SPNHandler:
@@ -25,48 +26,97 @@ class SPNHandler:
         self._label_keys = {"spars": 0, "dmap": 1} 
 
         self._model = None
+        set_seed(self._conf.train.seed)
                 
     
-    def create(self, is_pretrained=False) -> None:
+    def create(self) -> None:
 
         input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
-        self._model = SPN(input_size, self._model_conf.output_size)
+        self._model = SPNMultihead(input_size)
+        self._model.to(self._device)
+
+        self._freeze_model_parts_if_specified()
+
         self._optimizer = self._get_optimizer()
         self._loss_func = self._get_loss_function()
         self._lr_scheduler = self._get_lr_scheduler()  
 
-        if is_pretrained:
-            self.load_checkpoint()
-         
+        self._loss_func.to(self._device)
 
-        self._model.to(self._device)
+        if len(self._model_conf.pretrained):
+            self.load_checkpoint(self._model_conf.pretrained)
+        
+    
+    def _freeze_model_parts_if_specified(self):
+        if getattr(self._model_conf, "do_freeze_backend", False):
+            for param in self._model.backend.parameters():
+                param.requires_grad = False
+
+        if getattr(self._model_conf, "do_freeze_head_spars", False):
+            for param in self._model.head_spars.parameters():
+                param.requires_grad = False
+
+        if getattr(self._model_conf, "do_freeze_head_dmap", False):
+            for param in self._model.head_dmap.parameters():
+                param.requires_grad = False
+    
+
+    def save_checkpoint(self):
+        checkpoint = {
+            'epoch': self._epoch,
+            'model_state_dict': self._model.state_dict(),
+            'optimizer_state_dict': self._optimizer.state_dict(),
+            'scheduler_state_dict': self._lr_scheduler.state_dict(),
+            'loss': self._loss_func,
+        }
+        torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint.pt"))
+    
+    
+    def load_checkpoint(self, path):
+
+        checkpoint_path = os.path.join(path, "checkpoint.pt")
+
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+        self._model.load_state_dict(checkpoint['model_state_dict'])
+        if self._model_conf.do_resume:
+            self._optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            self._lr_scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+            self._epoch = checkpoint.get('epoch', 0)
+            self._loss_func = checkpoint.get('loss', self._loss_func)
 
 
     def _get_loss_function(self) : #TODO ret type
         
         if self._model_conf.loss == "logcosh":
             loss_func = LogCoshLoss()
+        elif self._model_conf.loss == "mse":
+            loss_func = nn.MSELoss()
         
         return loss_func
     
     def _get_optimizer(self) -> Optimizer:
+        trainable_params = filter(lambda p: p.requires_grad, self._model.parameters())
 
         if self._model_conf.optimizer == "adam":
-            optimizer = torch.optim.Adam(self._model.parameters(), 
-                                         lr=self._model_conf.start_lr,
-                                         weight_decay=self._model_conf.weight_decay)
+            optimizer = torch.optim.Adam(trainable_params, 
+                                        lr=self._model_conf.start_lr,
+                                        weight_decay=self._model_conf.weight_decay)
         elif self._model_conf.optimizer == "sgd":
-            optimizer = torch.optim.SGD(self._model.parameters(),
-                                lr=self._model_conf.start_lr,
-                                momentum=self._model_conf.momentum,
-                                weight_decay=self._model_conf.weight_decay)
-
+            optimizer = torch.optim.SGD(trainable_params,
+                                        lr=self._model_conf.start_lr,
+                                        momentum=self._model_conf.momentum,
+                                        weight_decay=self._model_conf.weight_decay)
         elif self._model_conf.optimizer == "adamw":
-            optimizer = torch.optim.AdamW(self._model.parameters(),
-                                    lr=self._model_conf.start_lr,
-                                    weight_decay=self._model_conf.weight_decay)
+            optimizer = torch.optim.AdamW(trainable_params,
+                                        lr=self._model_conf.start_lr,
+                                        weight_decay=self._model_conf.weight_decay)
+        else:
+            raise ValueError(f"Unsupported optimizer: {self._model_conf.optimizer}")
 
         return optimizer
+
 
 
     def _get_lr_scheduler(self):
@@ -204,40 +254,23 @@ class SPNHandler:
                     running_metrics[key][metric_name] /= len(dataloader)
         
         return running_metrics
-    
 
-    def save_checkpoint(self):
-        checkpoint = {
-            'epoch': self._epoch,
-            'model_state_dict': self._model.state_dict(),
-            'optimizer_state_dict': self._optimizer.state_dict(),
-            'scheduler_state_dict': self._lr_scheduler.state_dict(),
-            'loss': self._loss_func,
-        }
-        torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint"))
-    
-    
-    def load_checkpoint(self, checkpoint_path=None):
-        if checkpoint_path is None:
-            checkpoint_path = os.path.join(self._log_dir_path, "checkpoint")
-
-        checkpoint = torch.load(checkpoint_path, map_location='cpu')
-
-        self._model.load_state_dict(checkpoint['model_state_dict'])
-        self._optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self._lr_scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-
-        self._epoch = checkpoint.get('epoch', 0)
-        self._loss_func = checkpoint.get('loss', self._loss_func)
     
     def _log_results_to_tensorboard(self):
 
+        # Learning rate
+        lr = self._optimizer.param_groups[0]['lr']
+        self._tb_handler.log_scalar(lr, self._epoch, name="learning_rate", tag_ext="train")
+
+        # Train losses
         self._tb_handler.log_scalar(self._train_loss, self._epoch, name="loss", tag_ext="train")
         self._tb_handler.log_scalar(self._train_spars_loss, self._epoch, name="spars_loss", tag_ext="train")
         self._tb_handler.log_scalar(self._train_dmap_loss, self._epoch, name="dmap_loss", tag_ext="train")
 
+        # Val loss
         self._tb_handler.log_scalar(self._val_loss, self._epoch, name="loss", tag_ext="val")
         
+        # Train & val metrics
         self._tb_handler.log_dict_as_scalars(self._train_metrics, self._epoch, tag_ext="train")
         self._tb_handler.log_dict_as_scalars(self._val_metrics, self._epoch, tag_ext="val")
 
