@@ -66,9 +66,9 @@ if __name__ == "__main__":
 
             
             pruner.set_alpha(alpha)  
-            pruner.select_indices()       
+            pruner.select_indices()  
+            pruner.prune_model()     
             if not is_existing_sample:
-                pruner.prune_model()
                 pruner.eval_pruned_model()
                 
             pruner.update_label(is_existing_sample)            
