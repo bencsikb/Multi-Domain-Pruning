@@ -63,15 +63,12 @@ if __name__ == "__main__":
             # Check if the alpha_seq exists already
             alpha, is_existing_sample = action_handler.choose_alpha(i, pruner.data, sample_handler)
             logging.info(f"{alpha = }, {is_existing_sample = }")
-
             
             pruner.set_alpha(alpha)  
             pruner.select_indices()  
             pruner.prune_model()     
-            if not is_existing_sample:
-                pruner.eval_pruned_model()
-                
-            pruner.update_label(is_existing_sample)            
+            pruner.determine_metrics(is_existing_sample)                
+            pruner.update_label()            
             
             if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
                 logging.info("The state already exists in the dataset. Keeping only for later use.") 
