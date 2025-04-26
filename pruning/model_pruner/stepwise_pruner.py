@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import logging
+from typing import List
 
 from src.model.model_handler import ModelHandler
 from src.sample_handler import SampleHandler
@@ -45,13 +46,23 @@ class StepWisePruner():
         self._init_metrics.loc[0, 'map90'] = init_metrics[3]
         self._init_metrics.loc[0, 'n_params'] = init_metrics[4]
     
-    def _set_metrics(self, metrics) -> None:
+    def _set_metrics_from_list(self, metrics: List) -> None:
         
         self._metrics.loc[0, 'recall'] = metrics[0]
         self._metrics.loc[0, 'precision'] = metrics[1]
         self._metrics.loc[0, 'map50'] = metrics[2]
         self._metrics.loc[0, 'map90'] = metrics[3]
         self._metrics.loc[0, 'n_params'] = metrics[4]
+
+        logging.info(f"Metrics from  list: {metrics}")
+
+    
+    def _set_metrics_from_saved_label(self, label_df: pd.DataFrame) -> None:
+
+        self._metrics = label_df[["recall", "precision", "map50", "map90", "n_params"]]
+
+        logging.info(f"Metrics from label: {self._metrics.values.flatten().tolist()}")
+
 
 
     def increment_layer(self) -> None:
@@ -93,15 +104,26 @@ class StepWisePruner():
             self._model_handler.prune(self._all_indices, self._layer_i)
             self._model_handler.determine_prunable_layers()
     
+    
+    def determine_metrics(self, is_existing_sample: bool) -> None:
+        """ Determine the metrics for the model.
 
-    def eval_pruned_model(self) -> None:
-        """ Evaluates the model after pruning and updates the metrics after pruning.
+            If is_existing_sampe = True: load it from the saved label
+            Otherwise evaluate the model. 
+
+            Sets:
+                self._metrics
         """
-        # TODO metrics should be reinitialized somewhere
-        if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
-            metrics = self._model_handler.evaluate()
-            self._set_metrics(metrics)
-            logging.info(f"Metrics: {metrics}")
+
+        if is_existing_sample:
+            saved_label_df = self._sample_handler.retrieve_sample(self.data)
+            assert self._sample_handler.check_label_equality(saved_label_df, self._init_metrics), (
+                "Label equality check failed. The saved label DataFrame does not match the initial metrics.")
+            self._set_metrics_from_saved_label(saved_label_df)
+        else:
+            if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
+                metrics = self._model_handler.evaluate()
+                self._set_metrics_from_list(metrics)
 
 
     def update_state(self) -> None:
@@ -116,22 +138,14 @@ class StepWisePruner():
             self._model_state.loc[self._layer_i-1, 'is_pruned'] = 1
             self._model_state.loc[self._layer_i-1, 'n_pruned_ch'] = len(self._all_indices[self._layer_i-1]) 
 
-    def update_label(self, is_existing_sample) -> None:
+    def update_label(self) -> None:
 
-        if not is_existing_sample: 
+        self._label.loc[self._layer_i, self.metrics_features] = self._metrics.values
+        self._label.loc[self._layer_i, 'n_layer_channels'] = self._layer[1].out_channels
 
-            self._label.loc[self._layer_i, self.metrics_features] = self._metrics.values
-            self._label.loc[self._layer_i, 'n_layer_channels'] = self._layer[1].out_channels
-
-            init_columns = [col + '_init' for col in self.metrics_features]
-            self._label.loc[self._layer_i, init_columns] = self._init_metrics.values.flatten()
+        init_columns = [col + '_init' for col in self.metrics_features]
+        self._label.loc[self._layer_i, init_columns] = self._init_metrics.values.flatten()
         
-        else:
-            saved_label_df = self._sample_handler.retrieve_sample(self.data)
-            assert self._sample_handler.check_label_equality(saved_label_df, self._init_metrics), (
-                "Label equality check failed. The saved label DataFrame does not match the initial metrics.")
-            self._label.iloc[self._layer_i] = saved_label_df
-    
     
     def fine_tune():
          pass
