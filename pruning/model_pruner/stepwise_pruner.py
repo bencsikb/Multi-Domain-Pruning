@@ -40,7 +40,7 @@ class StepWisePruner():
         init_metrics = self._model_handler.evaluate()
         logging.info(f"Init_metrics: {init_metrics}")
         self._set_metrics_from_list(init_metrics)
-        
+
     
     def _set_metrics_from_list(self, metrics: List) -> None:
         
