@@ -22,7 +22,7 @@ class StepWisePruner():
         self._conf = conf
         self._channel_selector = channel_selector
 
-        self.state_features = ['is_pruned', 'in_ch', 'out_ch', 'kernel', 'stride', 'pad', 'n_pruned_ch']
+        self.state_features = ['is_pruned', 'in_ch', 'out_ch', 'kernel', 'stride', 'pad', 'n_pruned_ch', "prev_n_params", "prev_map50"]
         self.label_features = ['recall', 'precision', 'map50', 'map90', 'n_params', 'n_layer_channels']
         self.metrics_features = self.label_features[:-1]
 
@@ -39,28 +39,18 @@ class StepWisePruner():
         
         init_metrics = self._model_handler.evaluate()
         logging.info(f"Init_metrics: {init_metrics}")
-
-        self._init_metrics.loc[0, 'recall'] = init_metrics[0]
-        self._init_metrics.loc[0, 'precision'] = init_metrics[1]
-        self._init_metrics.loc[0, 'map50'] = init_metrics[2]
-        self._init_metrics.loc[0, 'map90'] = init_metrics[3]
-        self._init_metrics.loc[0, 'n_params'] = init_metrics[4]
+        self._set_metrics_from_list(init_metrics)
+        
     
     def _set_metrics_from_list(self, metrics: List) -> None:
         
-        self._metrics.loc[0, 'recall'] = metrics[0]
-        self._metrics.loc[0, 'precision'] = metrics[1]
-        self._metrics.loc[0, 'map50'] = metrics[2]
-        self._metrics.loc[0, 'map90'] = metrics[3]
-        self._metrics.loc[0, 'n_params'] = metrics[4]
-
+        self._metrics.iloc[0] = metrics
         logging.info(f"Metrics from  list: {metrics}")
 
     
     def _set_metrics_from_saved_label(self, label_df: pd.DataFrame) -> None:
 
-        self._metrics = label_df[["recall", "precision", "map50", "map90", "n_params"]]
-
+        self._metrics = label_df[["recall", "precision", "map50", "map90", "n_params"]].copy()
         logging.info(f"Metrics from label: {self._metrics.values.flatten().tolist()}")
 
 
@@ -83,7 +73,7 @@ class StepWisePruner():
         self._layer_i = -1
         self._metrics[self._metrics.columns] = self._init_metrics.values
         self._all_indices = [None] * self._model_handler.n_prunable_layers
-        self._model_state =  pd.DataFrame(0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features) 
+        self._model_state =  pd.DataFrame(0.0, index=range(self._model_handler.n_prunable_layers), columns=self.state_features) 
         self.update_state() # fill the channel-related params
         self._label = pd.DataFrame(0.0, index=range(self._model_handler.n_prunable_layers), columns=self.metrics_features + [col + '_init' for col in self.metrics_features])
         self._alpha_sequence = pd.DataFrame(0.0, index=range(self._model_handler.n_prunable_layers), columns=['alpha'])         
@@ -133,6 +123,10 @@ class StepWisePruner():
         self._model_state.loc[:, 'kernel'] = self._model_handler.prunable_kernel_sizes
         self._model_state.loc[:, 'stride'] = self._model_handler.prunable_strides
         self._model_state.loc[:, 'pad'] = self._model_handler.prunable_paddings
+        self._model_state.loc[:, 'pad'] = self._model_handler.prunable_paddings
+
+        self._model_state.loc[self._layer_i+1, 'prev_n_params'] = self._metrics["n_params"].item()
+        self._model_state.loc[self._layer_i+1, 'prev_map50'] = self._metrics["map50"].item()
 
         if self._layer_i  >= 1:
             self._model_state.loc[self._layer_i-1, 'is_pruned'] = 1
