@@ -39,7 +39,7 @@ class StepWisePruner():
         
         init_metrics = self._model_handler.evaluate()
         logging.info(f"Init_metrics: {init_metrics}")
-        self._set_metrics_from_list(init_metrics)
+        self._init_metrics.iloc[0] = init_metrics
 
     
     def _set_metrics_from_list(self, metrics: List) -> None:
@@ -112,7 +112,11 @@ class StepWisePruner():
             self._set_metrics_from_saved_label(saved_label_df)
         else:
             if self._all_indices[self._layer_i] is not None and self._all_indices[self._layer_i]:
-                metrics = self._model_handler.evaluate()
+                if self._metrics["map50"].item() < 0.0001: # no need for evaluation if metrics are already 0
+                    n_params = self._model_handler.get_n_model_params()
+                    metrics = [0.0, 0.0, 0.0, 0.0, n_params]
+                else:
+                    metrics = self._model_handler.evaluate()
                 self._set_metrics_from_list(metrics)
 
 
