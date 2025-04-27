@@ -123,7 +123,6 @@ class StepWisePruner():
         self._model_state.loc[:, 'kernel'] = self._model_handler.prunable_kernel_sizes
         self._model_state.loc[:, 'stride'] = self._model_handler.prunable_strides
         self._model_state.loc[:, 'pad'] = self._model_handler.prunable_paddings
-        self._model_state.loc[:, 'pad'] = self._model_handler.prunable_paddings
 
         self._model_state.loc[self._layer_i+1, 'prev_n_params'] = self._metrics["n_params"].item()
         self._model_state.loc[self._layer_i+1, 'prev_map50'] = self._metrics["map50"].item()
