@@ -83,7 +83,6 @@ class Coder:
         Parameters:
             state (pd.DataFrame): Pruning state of the model.
             label (pd.DataFrame): Contains scalar values like 'n_params_init' and 'map50_init'.
-            do_normalize (bool): Whether to normalize the features.
 
         Returns:
             torch.Tensor: Flattened feature tensor of shape [n_features * n_prunable_layers]
@@ -127,7 +126,7 @@ class Coder:
         # Flatten
         return torch.tensor(encoded_state.flatten(), dtype=torch.float32)
 
-    
+
     def encode_label(self, label: pd.DataFrame) -> torch.Tensor:
         # [sparsity, dmap]
         encoded_label = torch.zeros([2])  
