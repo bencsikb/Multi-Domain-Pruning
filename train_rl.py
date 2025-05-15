@@ -2,7 +2,7 @@ import os
 import argparse
 
 from utils.config_parser import ConfigParser
-from src.model.spn_handler import RLAgentHandler
+from src.model.rl_agent_handler import RLAgentHandler
 from utils.tensorboard_handler import TensorboardHandler
 from utils.common_utils import generate_run_name
 
