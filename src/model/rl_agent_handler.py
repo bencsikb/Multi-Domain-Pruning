@@ -6,7 +6,7 @@ from src.model.yolo_handler import YoloHandler
 from src.model.spn_handler import SPNHandler
 
 
-class RLAgent():
+class RLAgentHandler():
     def __init__(self, conf, run_name: str, tb_handler: TensorboardHandler) -> None:
         
         self._conf = conf
@@ -70,7 +70,8 @@ class RLAgent():
     def create(self):
 
         from reinforcement_learning.model import actorNet, criticNet
-        from src.training_components import get_loss_function, get_optimizer, get_lr_scheduler
+        from src.training_components import get_optimizer, get_lr_scheduler
+        from reinforcement_learning.losses import ActorLoss, CriticLoss
         
         state_shape = self._n_prunable_layers * len(self._state_features)
 
@@ -80,7 +81,7 @@ class RLAgent():
                                               lr = self._conf.actor_init_lr,
                                               weight_decay = self._conf.actor_weight_decay                                                                       
                                             )  
-        self._actor_loss = ...
+        self._actor_loss = ActorLoss()
 
         self._critic_model = criticNet(state_shape, 1)
         self._critic_optimizer = get_optimizer(type = self._conf.critic_optimizer,
@@ -88,7 +89,7 @@ class RLAgent():
                                               lr = self._conf.critic_init_lr,
                                               weight_decay = self._conf.critic_weight_decay                                                                       
                                             )          
-        self._critic_loss = ...
+        self._critic_loss = CriticLoss()
 
         self._lr_scheduler = get_lr_scheduler(type = self._conf.lr_scheduler,
                                               epochs = self._conf.train.epochs,
