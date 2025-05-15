@@ -8,6 +8,13 @@ from utils.config_parser import ConfigParser
 from pruning.channel_selection.channel_selector import ChannelSelector
 from pruning.model_pruner.stepwise_pruner import StepWisePruner
 
+def construct_sample_id(sample_handler) -> str:
+    sample_id = (
+        str(sample_handler.n_samples) + "_" +
+        str(sample_handler.model_counter) + "_" +
+        str(sample_handler.layer_counter)
+    )
+    return sample_id
 
 if __name__ == "__main__":
 
@@ -50,8 +57,12 @@ if __name__ == "__main__":
 
         for i, layer in enumerate(model_handler.prunable_layers):
 
+            sample_handler.increment_model_counter_if_needed(i)
+            sample_handler.set_layer_counter(i)    
+            sample_id = construct_sample_id(sample_handler)
+            
             # Logging
-            logging.info(f"Sample {sample_handler.n_samples}, layer {i}")
+            logging.info(f"Sample {sample_handler.n_samples}, layer {i}, ID: {sample_id}")
             logging.info(layer)
 
             # Load model
@@ -61,15 +72,12 @@ if __name__ == "__main__":
             # Check if the alpha_seq exists already
             alpha, is_existing_sample = action_handler.choose_alpha(i, pruner.data, sample_handler)
             logging.info(f"{alpha = }, {is_existing_sample = }")
-
             
             pruner.set_alpha(alpha)  
-            pruner.select_indices()       
-            if not is_existing_sample:
-                pruner.prune_model()
-                pruner.eval_pruned_model()
-                
-            pruner.update_label(is_existing_sample)            
+            pruner.select_indices()  
+            pruner.prune_model()     
+            pruner.determine_metrics(is_existing_sample)                
+            pruner.update_label()        
             
             if is_existing_sample: # Don't save if pruning is only performed to create further non-existing states
                 logging.info("The state already exists in the dataset. Keeping only for later use.") 
@@ -77,15 +85,16 @@ if __name__ == "__main__":
                 # load the labels and check if the saved lables are the same as metrics_after
                 # assert if not
             else:
-                data_save_path = os.path.join(conf.samples.save_path, "data", str(sample_handler.n_samples) + ".pkl")
-                label_save_path = os.path.join(conf.samples.save_path, "label", str(sample_handler.n_samples) + ".pkl")
+                sample_handler.add_sample(pruner.data, pruner.label)
+
+                data_save_path = os.path.join(conf.samples.save_path, "data", sample_id + ".pkl")
+                label_save_path = os.path.join(conf.samples.save_path, "label", sample_id + ".pkl")
 
                 assert not os.path.exists(data_save_path), f"Sample {sample_handler.n_samples} already exists at {data_save_path}!"
                 assert not os.path.exists(label_save_path), f"Sample {sample_handler.n_samples} already exists at {label_save_path}!"
 
                 pruner.data.to_pickle(data_save_path)
                 pruner.label.to_pickle(label_save_path)
-                sample_handler.add_sample(pruner.data, pruner.label)
 
 
 
