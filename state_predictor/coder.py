@@ -32,25 +32,42 @@ class Coder:
         self._stride_range = (state['stride'].min(), state['stride'].max())
         self._pad_range = (state['pad'].min(), state['pad'].max())
         self._is_pruned_range = (0, 1)
+
+        self._spars_range = (0, 1)
+        self._dmap_range = (0, 1)
         
-        self._map_range = (0, label['map50_init'])
-        self._params_range = (0, label['n_params_init'])
+        # self._map_range = (0, label['map50_init'])
+        # self._params_range = (0, label['n_params_init'])
 
     
-    def _calculate_dmap(self, map: Series, map_init: Series) -> float:
+    def _calculate_dmap(self, map: pd.Series, map_init: pd.Series) -> pd.Series:
         """
-        Parameters:
-            map, map_init (Series): A one-element Series representing the current mAP and the initial mAP.
-        """
-        return 1 - (map.item() / map_init.item())
+        Calculates delta mAP.
 
-    def _calculate_spars(self, n_params: Series, n_params_init: Series) -> float:
-        """
         Parameters:
-            n_params, n_params_init (Series): A one-element Series representing the current and the 
-                                              initial nuber of parameters in the model.
+            map (Series): Series of current mAP values.
+            map_init (Series): One-element Series with the initial mAP.
+
+        Returns:
+            Series: 1 - (map / init_map), elementwise.
         """
-        return 1 - (n_params.item() / n_params_init.item())
+        init_val = map_init.item()  # scalar
+        return 1 - (map / init_val)
+
+
+    def _calculate_spars(self, n_params: pd.Series, n_params_init: pd.Series) -> pd.Series:
+        """
+        Calculates sparsity.
+
+        Parameters:
+            n_params (Series): Series of current number of parameters.
+            n_params_init (Series): One-element Series with the initial number of parameters.
+
+        Returns:
+            Series: 1 - (n_params / init_n_params), elementwise.
+        """
+        init_val = n_params_init.item()  # scalar
+        return 1 - (n_params / init_val)
 
     def _determine_pruned_area(self):
         """
@@ -59,13 +76,21 @@ class Coder:
         """
         pass
         
-    def encode_state(self, state: pd.DataFrame) -> torch.Tensor:
+    def encode_state(self, state: pd.DataFrame, label: pd.DataFrame) -> torch.Tensor:
         """
-        Encode pruning state DataFrame into a 1D tensor.
-        
+        Encode a model pruning state into a 1D tensor.
+
+        Parameters:
+            state (pd.DataFrame): Pruning state of the model.
+            label (pd.DataFrame): Contains scalar values like 'n_params_init' and 'map50_init'.
+
         Returns:
-            torch.Tensor of shape [n_prunable_layers * n_active_features]
+            torch.Tensor: Flattened feature tensor of shape [n_features * n_prunable_layers]
         """
+        # We'll track active features ourselves
+        encoded_state = []
+
+        # Define mappings
         col_range_map = {
             'alpha': self._alpha_range,
             'is_pruned': self._is_pruned_range,
@@ -75,22 +100,31 @@ class Coder:
             'stride': self._stride_range,
             'pad': self._pad_range,
             'n_pruned_ch': self._channel_range,
+            'prev_n_params': self._spars_range,
+            'prev_map50': self._dmap_range,
         }
 
-        encoded_state = []
+        for col in col_range_map:
+            if col not in state.columns:
+                continue
 
-        for col, range_ in col_range_map.items():
-            if col in state.columns:
-                normalized = normalize(state[col].values, range_).astype(np.float32)  # shape [n_prunable_layers]
-                encoded_state.append(normalized)  
+            if col == "prev_n_params":
+                init_val = label['n_params_init'].item() if isinstance(label['n_params_init'], pd.Series) else label['n_params_init']
+                values = self._calculate_spars(state[col], pd.Series([init_val]))
+            elif col == "prev_map50":
+                init_val = label['map50_init'].item() if isinstance(label['map50_init'], pd.Series) else label['map50_init']
+                values = self._calculate_dmap(state[col], pd.Series([init_val]))
+            else:
+                values = state[col]
 
-        if not encoded_state:
-            raise ValueError("No recognized columns found in the input state DataFrame.")
+            values = normalize(values.values, col_range_map[col])
+            encoded_state.append(values.astype(np.float32))
 
-        # Stack to shape [n_features_used, n_prunable_layers] → transpose to [n_prunable_layers, n_features_used]
-        encoded_matrix = np.stack(encoded_state, axis=0).T
+        # Stack: shape [n_features_active, n_prunable_layers] → transpose
+        encoded_state = np.stack(encoded_state, axis=0).T  # shape [n_prunable_layers, n_features_active]
 
-        return torch.tensor(encoded_matrix.flatten(), dtype=torch.float32)
+        # Flatten
+        return torch.tensor(encoded_state.flatten(), dtype=torch.float32)
 
 
     def encode_label(self, label: pd.DataFrame) -> torch.Tensor:
@@ -99,18 +133,12 @@ class Coder:
 
         sparsity = self._calculate_spars(label['n_params'], label['n_params_init'])
         dmap = self._calculate_dmap(label['map50'], label['map50_init'])
-        encoded_label[0] = normalize(sparsity, value_range=(0, 1))
-        encoded_label[1] = normalize(dmap, value_range=(0, 1))
+        encoded_label[0] = normalize(sparsity.item(), value_range=(0, 1))
+        encoded_label[1] = normalize(dmap.item(), value_range=(0, 1))
+
         
         return torch.Tensor(encoded_label)
 
 
     def decode_label(self, label):
         pass
-
-
-# QUESTIONS:
-
-# - mi jelezze a nem prunolást? Egy dedikált param vagy nem feltöltött state mátrix?
-# - normálás minden layer channeljére külön-külön vagy a max channel méretre?
-# - milyen normálási range legyen vagy milyen aktiváció, hogy az 1-nél nagyobb prop (dmap) is működjön?
