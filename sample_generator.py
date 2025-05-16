@@ -56,7 +56,7 @@ if __name__ == "__main__":
     action_handler.define_alpha_list(to_save=True)
     action_handler.define_alpha_pdfs(to_save=True)
 
-    if conf.channel_selection.single_layer:
+    if getattr(conf.channel_selection, "single_layer", False):
         index_single_layer = 12
         sample_cnt = 0
     while sample_handler.n_samples < conf.samples.max_samples:
@@ -64,9 +64,9 @@ if __name__ == "__main__":
         pruner.reset_model_and_state()
 
         for i, layer in enumerate(model_handler.prunable_layers):
-            if conf.channel_selection.single_layer and (i > index_single_layer):
+            if getattr(conf.channel_selection, "single_layer", False) and (i > index_single_layer):
                 continue
-            
+
             sample_handler.increment_model_counter_if_needed(i)
             sample_handler.set_layer_counter(i)    
             sample_id = construct_sample_id(sample_handler)
@@ -81,7 +81,7 @@ if __name__ == "__main__":
             pruner.update_state()
             
             
-            if conf.channel_selection.single_layer:
+            if getattr(conf.channel_selection, "single_layer", False):
                 
                 alpha, is_existing_sample, sample_cnt = action_handler.choose_alpha_for_single_layer(
                     i, pruner.data, sample_handler, index_single_layer, sample_cnt)
