@@ -128,94 +128,103 @@ class RLAgentHandler():
             
             # === 2. Initialize Environment ===
 
-            network_seq = []
-            init_param_nmb = sum([param.nelement() for param in net_for_pruning.parameters()])
-
-            action_seq = torch.full([conf.train.batch_size, 1, conf.prune.n_prunable_layers], -1.0)
-            state_seq = torch.full([conf.train.batch_size, n_features, conf.prune.n_prunable_layers], -1.0)
+            action_batch, state_batch, sparsb_prev, dmapb_prev = self._init_environment()
+            # self._model_pruner.reset_model_and_state()
 
             actions = []
             states = []
             rewards = []
-            rewards_list = []
             values = []
             policies = []
             log_probs = []
             entropies = []
-            errors = []
-            dEs, dSs = [], []
-
-            layer_cnt = 0
-            sparsity_prev = torch.full([conf.train.batch_size], -1.0)
-            dmap_prev = torch.full([conf.train.batch_size], -1.0)
-            sparsity_prev = torch.full([conf.train.batch_size], -1.0)
-            dmap_prev = torch.full([conf.train.batch_size], -1.0)
-
-            self._model_pruner.reset_model_and_state()
             
             # === 3. Iterate Over Layers ===
             for i, layer in enumerate(self._yolo_handler.prunable_layers):
 
                 # --- 3b. Get / Update State ---
-                self._model_pruner.increment_layer()
-                self._model_pruner.update_state()
+                #self._model_pruner.increment_layer()
+                #self._model_pruner.update_state()
+                state_batch = self._update_state_batch(i, state_batch, sparsb_prev, dmapb_prev)
 
-                data = self._model_pruner.data # alpha + state
-                encoded_data = self._coder.encode_state(data)
-                state = ... # remove alpha from data
-                encoded_state = ...
+                # --- 3c. Actorm, Critic Forward ---  
+                probs, action_dist, log_softmax = self._actor_model(state_batch)
+                q_value = criticNet(state_batch)
 
-                # --- 3c. Actor Forward ---              
-
-                probs, action_dist, log_softmax = self._actor_model(encoded_data)
-                action = action_dist.sample()  # alpha index
-                
                 # --- 3d. Sample Action & Compute Info ---
+                action = action_dist.sample()  # alpha index                
 
                 # entropy = action_dist.entropy()
                 log_prob = action_dist.log_prob(action).unsqueeze(1)
                 policy = probs.gather(-1, action.unsqueeze(0))
                 entropy = - (probs * log_softmax).sum(1, keepdim=True)
 
-                for i in range(self._conf.train.batch_size):
-                    action_seq[i, :, layer_cnt] = self._possible_alphas[action[i]] # not normalized.
+                action_batch[:, :, i] = self._possible_alphas[action] # TODO not normalized
+
                 
                 # --- 3e. Log Layer Info ---
                 # --- 3f. Save Actions ---
 
-                # --- 3g. Predict Error & Sparsity --
-                
-                spn_input_data = torch.cat((action_seq, state_seq[:, -1, :].unsqueeze(1)), dim=1).view(
-                        [conf.train.batch_size, -1]).type(torch.float32).to(device)
-                
+                # --- 3g. Predict Error & Sparsity --                
+                spn_input_data = torch.cat((action_batch, state_batch), dim=1).view([self._conf.train.batch_size, -1]) # .type(torch.float32).to(device)
                 prediction = self._spn_handler.predict(spn_input_data)
-
-                spars, dmap = prediction[:,0], prediction[:,1]
+                sparsb, dmapb = prediction[:,0], prediction[:,1]
                 
                 # --- 3h. Compute Reward ---
-                reward = self._get_reward(self._conf.reward.type, spars, dmap)
+                reward = self._get_reward(self._conf.reward.type, sparsb, dmapb)
 
                 # --- 3i. Save Trajectory Step ---
+                sparsb_prev = sparsb.clone()
+                dmapb_prev = dmapb_prev.clone()
 
-                # --- 3j. Update for Next Layer ---
+                log_probs.append(log_prob)  
+                entropies.append(entropy)  
+                actions.append(action_batch.clone().detach())
+                states.append(state_batch.clone().detach())                
+                rewards.append(reward) 
+                values.append(q_value)  
+                policies.append(policy)  
+               
 
-            # === 4. Optional Evaluation ===
-
-            # === 5. Select Best Result ===
+            # === 5. Select Best Result from the batch ==
+                
+            best_idx = self._coder.decode_label(dmapb[-1, :, 0]).argmin() # TODO list2floatTensor [n_prunableLayers, batch_size, 1]
+            best_spars = self._coder.decode_label(states[-1][best_idx, -1, -1]).item()
+            best_dmap = self._coder.decode_label(dmapb[-1, best_idx, 0]).item() # TODO list2FloatTensor
+            best_alpha_seq = ... # TODO decode alpha denormalize(actions[-1][bidx, 0, :], 0, 2.2)
 
             # === 6. Compute Returns ===
+            returns = self._get_discounted_reward(reward, values, gamma=0.99)
 
             # === 7. Prepare Log Probs ===
+            if self._episode == 0:
+                log_probs_prev = torch.zeros(log_probs.shape)
+            else:            
+                log_probs_prev = log_probs_prev.detach()
 
             # === 8. Compute Losses ===
-
+            critic_loss = self._critic_loss(rewards, values, 0.99)
+            actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._conf.model.actor_entory_coef, gamma=0.99)
+    
             # === 9. Backpropagation ===
+            self._actor_optimizer.zero_grad()
+            self._critic_optimizer.zero_grad()
+
+            final_loss = actor_loss + critic_loss
+            final_loss.backward(retain_graph=True)
+
+            reward_backprop = rewards.mean()
+            (-reward_backprop).backward()
+
+            self._actor_optimizer.step()
+            self._critic_optimizer.step()
 
             # === 10. Logging ===
 
             # === 11. Save Checkpoint ===
 
             # === 12. End of Episode ===
+            self._episode += 1
 
 
 
@@ -246,23 +255,66 @@ class RLAgentHandler():
         return reward.unsqueeze(1)
     
 
-    def _init_state_sequence(self):
-        pass
+    def _get_discounted_reward(self, rewards, gamma):
+        """
+        Compute normalized discounted cumulative rewards.
 
-    def _update_state_sequence(self, state):
-        
-        i = layer_cnt
+        Args:
+            rewards (List[Tensor] or Tensor): Sequence of rewards.
+            gamma (float): Discount factor.
 
-        state[:, 0, i] = normalize(layer.in_channels, 0, 1024)
-        state[:, 1, i] = normalize(layer.out_channels, 0, 1024)
-        state[:, 2, i] = normalize(layer.kernel_size[0], 0, 3)
-        state[:, 3, i] = normalize(layer.stride[0], 0, 2)
-        state[:, 4, i] = normalize(layer.padding[0], 0, 1)
-        state[:, 5, i] = sparsity
-        if state.shape[1] == 7:
-            state[:, 6, i] = dmap
+        Returns:
+            Tensor: Normalized discounted reward tensor.
+        """
+        disc_rewards = []
+        val = 0.0
+        for i in reversed(range(len(rewards))):
+            val = rewards[i] + gamma * val
+            disc_rewards.insert(0, val)
 
-        return state
+        disc_rewards = torch.tensor(disc_rewards, dtype=torch.float32, device=rewards[0].device)
+        out = disc_rewards - disc_rewards.mean()
+        out /= disc_rewards.std() + 1e-8  # prevent division by zero
+
+        return out
+
+    def _get_advantage(self, rewards, values, gamma=0.99):
+        """
+        Compute advantage as the difference between discounted rewards and value predictions.
+
+        Args:
+            rewards (List[Tensor] or Tensor): Rewards per step.
+            values (Tensor): Value function estimates.
+            gamma (float): Discount factor.
+
+        Returns:
+            Tensor: Advantage values.
+        """
+        disc_rewards = self._get_discounted_reward(rewards, gamma)
+        return disc_rewards - values
+
+
+    
+
+    def _init_environment(self):
+
+        action_batch = torch.full([self._conf.train.batch_size, 1, self._yolo_handler.n_prunable_layers], -1.0)
+        state_batch = torch.full([self._conf.train.batch_size, 2, self._yolo_handler.n_prunable_layers], -1.0) # TODO n_features
+        sparsb_prev = torch.full([self._conf.train.batch_size], -1.0)
+        dmapb_prev = torch.full([self._conf.train.batch_size], -1.0)
+
+        return action_batch, state_batch, sparsb_prev, dmapb_prev
+
+
+    def _update_state_batch(self, layer_i, state_batch, sparsb_prev, dmapb_prev):
+
+        # Only spars and dmap prev.
+
+        state_batch[:, 0, layer_i] = sparsb_prev
+        state_batch[:, 1, layer_i] = dmapb_prev
+
+        return state_batch
+    
 
     def _init_action_sequence(self):
         pass
