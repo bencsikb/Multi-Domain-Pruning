@@ -57,7 +57,7 @@ if __name__ == "__main__":
     action_handler.define_alpha_pdfs(to_save=True)
 
     if getattr(conf.channel_selection, "single_layer", False):
-        index_single_layer = 12
+        index_single_layer = 0
         sample_cnt = 0
     while sample_handler.n_samples < conf.samples.max_samples:
 
