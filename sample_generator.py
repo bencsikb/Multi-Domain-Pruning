@@ -1,5 +1,6 @@
 import os
 import logging
+import argparse 
 
 from model.yolo_handler import YoloHandler
 from src.sample_handler import SampleHandler
@@ -17,9 +18,13 @@ def construct_sample_id(sample_handler) -> str:
     return sample_id
 
 if __name__ == "__main__":
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default='config/pruning/pruning_sampling.ini')
+    args = parser.parse_args()
 
     # Read and save config file
-    conf = ConfigParser.read("config/pruning/pruning_sampling.ini")
+    conf = ConfigParser.read(args.config)
     ConfigParser.save(conf, os.path.join(conf.samples.save_path, "settings.ini"))
 
     # Set up logging 
