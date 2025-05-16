@@ -7,7 +7,6 @@ from src.sample_handler import SampleHandler
 from src.action_handler import ActionHandler
 from utils.config_parser import ConfigParser
 from pruning.channel_selection.channel_selector import ChannelSelector
-from pruning.channel_selection.utils import choose_alpha
 from pruning.model_pruner.stepwise_pruner import StepWisePruner
 
 def construct_sample_id(sample_handler) -> str:
