@@ -2,7 +2,8 @@ import os
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from typing import Tuple , List      
+from typing import Tuple , List 
+from types import SimpleNamespace
 from torch.utils.data import DataLoader
 
 from utils.tensorboard_handler import TensorboardHandler
@@ -14,7 +15,7 @@ from utils.common_utils import set_seed
 
 
 class SPNHandler:
-    def __init__(self, conf, run_name: str, tb_handler: TensorboardHandler) -> None:
+    def __init__(self, conf: SimpleNamespace, run_name: str, tb_handler: TensorboardHandler = None) -> None:
 
         self._conf = conf
         self._run_name = run_name
@@ -30,12 +31,12 @@ class SPNHandler:
         set_seed(self._conf.train.seed)
                 
     
-    def create(self) -> None:
+    def create(self, is_pretrained: bool = False) -> None:
 
         from src.training_components import get_loss_function, get_optimizer, get_lr_scheduler
 
         input_size = self._model_conf.n_prunable_layers * len(self._state_features)
-        self._model = SPN(input_size, self._model_conf.output_size)
+        self._model = SPNMultihead(input_size,)
         self._optimizer = get_optimizer(type = self._model_conf.optimizer,
                                         model = self._model,
                                         lr = self._model_conf.start_lr,
@@ -48,8 +49,9 @@ class SPNHandler:
 
         self._loss_func.to(self._device)
 
-        if len(self._model_conf.pretrained):
-            self.load_checkpoint(self._model_conf.pretrained)
+        if len(self._model_conf.pretrained) or is_pretrained:
+            log_path = self._log_dir_path if is_pretrained else self._model_conf.pretrained 
+            self.load_checkpoint(log_path)
         
     
     def _freeze_model_parts_if_specified(self):
@@ -95,7 +97,7 @@ class SPNHandler:
     
     def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader):
         epochs = self._conf.train.epochs
-        epoch = 0
+        epoch = 0 # TODO
 
         while epoch < epochs:
             self._model.train()

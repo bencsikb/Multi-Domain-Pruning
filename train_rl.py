@@ -23,7 +23,7 @@ if __name__ == "__main__":
     os.makedirs(log_dir)
 
     # Save config
-    ConfigParser.save(conf, os.path.join(log_dir, "settings.ini"))
+    #ConfigParser.save(conf, os.path.join(log_dir, "settings.ini"))
 
     # Create tb_handler 
     tb_handler = TensorboardHandler(log_dir)

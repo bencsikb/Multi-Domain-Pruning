@@ -5,8 +5,9 @@ from typing import List
 from utils.tensorboard_handler import TensorboardHandler
 from src.model.yolo_handler import YoloHandler
 from src.model.spn_handler import SPNHandler
+from utils.config_parser import ConfigParser
 from src.training_components import get_optimizer, get_lr_scheduler
-from pruning.model_pruner.stepwise_rl_pruner import StepWiseRLPruner
+#from pruning.model_pruner.stepwise_rl_pruner import StepWiseRLPruner
 from pruning.channel_selection.channel_selector import ChannelSelector
 from state_predictor.coder import Coder
 from reinforcement_learning.model import actorNet, criticNet
@@ -24,7 +25,7 @@ class RLAgentHandler():
 
         self._spn_handler = self._load_spn()
         self._yolo_handler = self._load_yolo()
-        self._model_pruner = self._get_model_pruner()
+        #self._model_pruner = self._get_model_pruner()
         self._coder = self._initialize_coder()
 
         self._possible_alphas = self._get_alphas()
@@ -38,8 +39,9 @@ class RLAgentHandler():
         run_path = self._conf.spn.root        
         run_name = os.path.basename(run_path)
         conf_path = os.path.join(run_path, "settings.ini")
+        conf = ConfigParser.read(conf_path)
         # load or define SPN model
-        spn_handler = SPNHandler(conf_path, run_name=run_name)
+        spn_handler = SPNHandler(conf, run_name=run_name)
         spn_handler.create(is_pretrained=True)
 
         return spn_handler
@@ -52,10 +54,10 @@ class RLAgentHandler():
 
         return yolo_handler   
     
-    def _get_model_pruner(self) -> StepWiseRLPruner:
-        yolo_conf = self._conf.yolo    
-        channel_selector = ChannelSelector(self._conf.channel_selection)  # TODO conf should be loaded from folder
-        return StepWiseRLPruner(self._yolo_handler, yolo_conf, channel_selector)
+    # def _get_model_pruner(self) -> StepWiseRLPruner:
+    #     yolo_conf = self._conf.yolo    
+    #     channel_selector = ChannelSelector(self._conf.channel_selection)  # TODO conf should be loaded from folder
+    #     return StepWiseRLPruner(self._yolo_handler, yolo_conf, channel_selector)
 
     def _initialize_coder(self):
         """Initialize the coder with an example file.
