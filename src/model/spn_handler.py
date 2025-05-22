@@ -32,7 +32,10 @@ class SPNHandler:
     def create(self) -> None:
 
         input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
-        self._model = SPNMultihead(input_size)
+        if self._model_conf.multihead:
+            self._model = SPNMultihead(input_size)
+        else:
+            self._model = SPN(input_size, self._model_conf.output_size)
         self._model.to(self._device)
 
         self._freeze_model_parts_if_specified()
