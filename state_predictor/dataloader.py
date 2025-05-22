@@ -83,7 +83,8 @@ class SPNDataset(Dataset):
             label_df = pd.read_pickle(label_path)
 
             # Filter for selected features
-            state_df = state_df[self._conf.model.state_features]        
+            state_df = state_df[self._conf.model.state_features]  
+            state_df = state_df.iloc[:self._conf.model.n_prunable_layers]  # todo: quickfix              
 
             # Encode state and label using the coder instance
             encoded_state = self.coder.encode_state(state_df, label_df)
