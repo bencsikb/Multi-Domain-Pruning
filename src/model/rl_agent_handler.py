@@ -1,6 +1,7 @@
 import os
 import torch
 from typing import List
+from types import SimpleNamespace
 
 from utils.tensorboard_handler import TensorboardHandler
 from src.model.yolo_handler import YoloHandler
@@ -8,6 +9,7 @@ from src.model.spn_handler import SPNHandler
 from utils.config_parser import ConfigParser
 from src.training_components import get_optimizer, get_lr_scheduler
 #from pruning.model_pruner.stepwise_rl_pruner import StepWiseRLPruner
+from pruning.model_pruner.stepwise_pruner import StepWisePruner
 from pruning.channel_selection.channel_selector import ChannelSelector
 from state_predictor.coder import Coder
 from reinforcement_learning.model import actorNet, criticNet
@@ -23,41 +25,61 @@ class RLAgentHandler():
         self._tb_handler = tb_handler
         self._log_dir_path = os.path.join(conf.save.root, run_name)
 
+        # Load configs
+        self._conf = conf
+        self._spn_conf = self._get_spn_config()
+        self._samples_conf = self._get_samples_config()
+
         self._spn_handler = self._load_spn()
         self._yolo_handler = self._load_yolo()
-        #self._model_pruner = self._get_model_pruner()
+        self._model_pruner = self._get_model_pruner()
         self._coder = self._initialize_coder()
 
         self._possible_alphas = self._get_alphas()
         self._n_prunable_layers = self._get_n_prunable_layers()
 
-        self._state_features = self._conf.state_features
+        self._state_features = self._spn_conf.model.state_features
+    
+    def _get_spn_config(self) -> SimpleNamespace:
 
-
-    def _load_spn(self) -> SPNHandler:
-        
         run_path = self._conf.spn.root        
-        run_name = os.path.basename(run_path)
         conf_path = os.path.join(run_path, "settings.ini")
         conf = ConfigParser.read(conf_path)
-        # load or define SPN model
-        spn_handler = SPNHandler(conf, run_name=run_name)
-        spn_handler.create(is_pretrained=True)
+        return conf
 
+    def _get_samples_config(self) -> SimpleNamespace:
+        samples_conf_path = self._conf.yolo.samples_conf_path
+        samples_conf = ConfigParser.read(samples_conf_path)
+        return samples_conf
+
+    def _load_spn(self) -> SPNHandler:
+
+        run_path = self._conf.spn.root        
+        run_name = os.path.basename(run_path)      
+        spn_handler = SPNHandler(self._spn_conf, run_name=run_name)
+        spn_handler.create(is_pretrained=True)
         return spn_handler
     
     
     def _load_yolo(self) -> YoloHandler:
 
-        yolo_conf = self._conf.yolo
+        yolo_conf = self._samples_conf.model
         yolo_handler = YoloHandler(yolo_conf)
 
         return yolo_handler   
     
-    # def _get_model_pruner(self) -> StepWiseRLPruner:
-    #     yolo_conf = self._conf.yolo    
-    #     channel_selector = ChannelSelector(self._conf.channel_selection)  # TODO conf should be loaded from folder
-    #     return StepWiseRLPruner(self._yolo_handler, yolo_conf, channel_selector)
+    def _get_model_pruner(self) -> StepWisePruner:
+        """ Needed for loading the initial model state. """
+
+        channel_selector = ChannelSelector(self._samples_conf.channel_selection) 
+
+        pruner = StepWisePruner(model_handler=self._yolo_handler,
+                                sample_handler=None,
+                                conf = self._samples_conf,
+                                channel_selector=channel_selector,
+                                is_rl = True)
+
+        return pruner
 
     def _initialize_coder(self):
         """Initialize the coder with an example file.
@@ -65,7 +87,7 @@ class RLAgentHandler():
         """
         
         state_example_df = self._model_pruner.data
-        alpha_range = self._conf.alpha.min_max_steps[:2] #TODO
+        alpha_range = self._samples_conf.alpha.min_max_steps[:2] #TODO
         return Coder(state_example_df, None, alpha_range)
     
     def _get_alphas(self) -> List:
@@ -101,23 +123,23 @@ class RLAgentHandler():
         state_shape = self._n_prunable_layers * len(self._state_features)
 
         self._actor_model = actorNet(state_shape, len(self._possible_alphas))
-        self._actor_optimizer = get_optimizer(type = self._conf.actor_optimizer,
+        self._actor_optimizer = get_optimizer(type = self._conf.model.actor_optimizer,
                                               model = self._actor_model,
-                                              lr = self._conf.actor_init_lr,
-                                              weight_decay = self._conf.actor_weight_decay                                                                       
+                                              lr = self._conf.model.actor_init_lr,
+                                              weight_decay = self._conf.model.actor_weight_decay                                                                       
                                             )  
         self._actor_loss = ActorLoss()
 
         self._critic_model = criticNet(state_shape, 1)
-        self._critic_optimizer = get_optimizer(type = self._conf.critic_optimizer,
+        self._critic_optimizer = get_optimizer(type = self._conf.model.critic_optimizer,
                                               model = self._critic_model,
-                                              lr = self._conf.critic_init_lr,
-                                              weight_decay = self._conf.critic_weight_decay                                                                       
+                                              lr = self._conf.model.critic_init_lr,
+                                              weight_decay = self._conf.model.critic_weight_decay                                                                       
                                             )          
         self._critic_loss = CriticLoss()
 
-        self._lr_scheduler = get_lr_scheduler(type = self._conf.lr_scheduler,
-                                              epochs = self._conf.train.epochs,
+        self._lr_scheduler = get_lr_scheduler(type = self._conf.model.lr_scheduler,
+                                              epochs = self._conf.train.episodes,
                                               optimizer = self._actor_optimizer)  
         
         self._episode = 0
