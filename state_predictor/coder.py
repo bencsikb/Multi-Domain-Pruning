@@ -4,13 +4,13 @@ import pandas as pd
 from pandas.core.series import Series
 from typing import Tuple
 
-from state_predictor.utils import normalize
+from state_predictor.utils import normalize, denormalize
 
 
 class Coder:
     def __init__(self, 
                  state_example: pd.DataFrame, 
-                 label_example: pd.DataFrame,
+                 label_example: pd.DataFrame, # TODO no need for this
                  alpha_range: Tuple[float],
                  encode_range: Tuple[float] = (-1, 1)
                  ) -> None:
@@ -140,5 +140,14 @@ class Coder:
         return torch.Tensor(encoded_label)
 
 
-    def decode_label(self, label):
-        pass
+    def decode_label(self, encoded_label: tuple[torch.Tensor, torch.Tensor]) -> dict[str, torch.Tensor]:
+        
+        pred_spars, pred_dmap = encoded_label
+
+        sparsity = denormalize(pred_spars, value_range=(0, 1))
+        dmap = denormalize(pred_dmap, value_range=(0, 1))
+
+        return {
+            'spars': sparsity,
+            'dmap': dmap
+        }

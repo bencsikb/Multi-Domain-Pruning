@@ -36,7 +36,7 @@ class SPNHandler:
         from src.training_components import get_loss_function, get_optimizer, get_lr_scheduler
 
         input_size = self._model_conf.n_prunable_layers * len(self._state_features)
-        self._model = SPNMultihead(input_size,)
+        self._model = SPNMultihead(input_size).to(self._device)
         self._optimizer = get_optimizer(type = self._model_conf.optimizer,
                                         model = self._model,
                                         lr = self._model_conf.start_lr,
@@ -189,11 +189,11 @@ class SPNHandler:
         with torch.no_grad():
             outs = self._model(data_gt)   
 
-        outs = outs.squeeze()
-        pred_spars =  denormalize(outs[0], value_range=(0, 1))
-        pred_dmap = denormalize(outs[1], value_range=(0, 1))
+        # outs = outs.squeeze()
+        # pred_spars =  denormalize(outs[0], value_range=(0, 1))
+        # pred_dmap = denormalize(outs[1], value_range=(0, 1))
         
-        return pred_spars, pred_dmap        
+        return outs[:,0], outs[:,1] #pred_spars, pred_dmap        
 
     
     

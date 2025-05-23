@@ -21,6 +21,7 @@ class RLAgentHandler():
     def __init__(self, conf, run_name: str, tb_handler: TensorboardHandler) -> None:
         
         self._conf = conf
+        self._device = self._conf.train.device
         self._run_name = run_name
         self._tb_handler = tb_handler
         self._log_dir_path = os.path.join(conf.save.root, run_name)
@@ -119,10 +120,10 @@ class RLAgentHandler():
     
     
     def create(self):
-        
-        state_shape = self._n_prunable_layers * len(self._state_features)
 
-        self._actor_model = actorNet(state_shape, len(self._possible_alphas))
+        state_feature_dim = self._n_prunable_layers * (len(self._state_features) - 1) # alpha is not needed -> -1
+
+        self._actor_model = actorNet(state_feature_dim, len(self._possible_alphas)).to(self._device)
         self._actor_optimizer = get_optimizer(type = self._conf.model.actor_optimizer,
                                               model = self._actor_model,
                                               lr = self._conf.model.actor_init_lr,
@@ -130,7 +131,7 @@ class RLAgentHandler():
                                             )  
         self._actor_loss = ActorLoss()
 
-        self._critic_model = criticNet(state_shape, 1)
+        self._critic_model = criticNet(state_feature_dim, 1).to(self._device)
         self._critic_optimizer = get_optimizer(type = self._conf.model.critic_optimizer,
                                               model = self._critic_model,
                                               lr = self._conf.model.critic_init_lr,
@@ -148,7 +149,7 @@ class RLAgentHandler():
 
     def train(self):
 
-        while self.episode < self._conf.train.episodes:
+        while self._episode < self._conf.train.episodes:
             
             # === 2. Initialize Environment ===
 
@@ -164,16 +165,17 @@ class RLAgentHandler():
             entropies = []
             
             # === 3. Iterate Over Layers ===
-            for i, layer in enumerate(self._yolo_handler.prunable_layers):
+            for layer_i, layer in enumerate(self._yolo_handler.prunable_layers):
 
                 # --- 3b. Get / Update State ---
                 #self._model_pruner.increment_layer()
                 #self._model_pruner.update_state()
-                state_batch = self._update_state_batch(i, state_batch, sparsb_prev, dmapb_prev)
+                state_batch = self._update_state_batch(layer_i, state_batch, sparsb_prev, dmapb_prev)
 
                 # --- 3c. Actorm, Critic Forward ---  
-                probs, action_dist, log_softmax = self._actor_model(state_batch)
-                q_value = criticNet(state_batch)
+                state_batch_flattened = state_batch.view([self._conf.train.batch_size, -1])
+                probs, action_dist, log_softmax = self._actor_model(state_batch_flattened)
+                q_value = self._critic_model(state_batch_flattened)
 
                 # --- 3d. Sample Action & Compute Info ---
                 action = action_dist.sample()  # alpha index                
@@ -183,8 +185,8 @@ class RLAgentHandler():
                 policy = probs.gather(-1, action.unsqueeze(0))
                 entropy = - (probs * log_softmax).sum(1, keepdim=True)
 
-                action_batch[:, :, i] = self._possible_alphas[action] # TODO not normalized
-
+                for i in range(self._conf.train.batch_size): # TODO: make it more "pythonic"
+                    action_batch[i, :, layer_i] = self._possible_alphas[action[layer_i]] # TODO: normalize alpha
                 
                 # --- 3e. Log Layer Info ---
                 # --- 3f. Save Actions ---
@@ -192,8 +194,9 @@ class RLAgentHandler():
                 # --- 3g. Predict Error & Sparsity --                
                 spn_input_data = torch.cat((action_batch, state_batch), dim=1).view([self._conf.train.batch_size, -1]) # .type(torch.float32).to(device)
                 prediction = self._spn_handler.predict(spn_input_data)
-                sparsb, dmapb = prediction[:,0], prediction[:,1]
-                
+                decoded_prediction = self._coder.decode_label(prediction)
+                sparsb, dmapb = decoded_prediction['spars'], decoded_prediction['dmap']
+
                 # --- 3h. Compute Reward ---
                 reward = self._get_reward(self._conf.reward.type, sparsb, dmapb)
 
@@ -253,27 +256,27 @@ class RLAgentHandler():
 
 
 
-    def _get_reward(self, reward_type, spars, dmap):
+    def _get_reward(self, reward_type, decoded_sparsb, decoded_dmapb):
 
         if reward_type == 'proposed':
-            reward = reward_function_proposed(self._coder.decode_label(spars),
+            reward = reward_function_proposed(decoded_sparsb,
                                               self._conf.reward.target_spars,
-                                              self._coder.decode_label(dmap), 
+                                              decoded_dmapb, 
                                               self._conf.reward.target_dmap,
-                                              self._conf.reward.spars_coef,
-                                              self._conf.reward.dmap_coef,
+                                              self._conf.reward.spars_coeff,
+                                              self._conf.reward.dmap_coeff,
                                               self._conf.reward.beta )
         elif reward_type == 'purl':
-            reward = reward_function_purl(self._coder.decode_label(spars),
+            reward = reward_function_purl(decoded_sparsb,
                                             self._conf.reward.target_spars,
-                                            self._coder.decode_label(dmap), 
+                                            decoded_dmapb, 
                                             self._conf.reward.target_map,
                                             self._conf.reward.map_before, # ? TODO 
                                             self._conf.reward.beta )             
 
         elif reward_type == 'amc':
-            reward = reward_function_amc(self._coder.decode_label(spars),
-                                         self._coder.decode_label(dmap))
+            reward = reward_function_amc(decoded_sparsb,
+                                         decoded_dmapb)
                                          # init_params TODO
 
         return reward.unsqueeze(1)
@@ -322,10 +325,10 @@ class RLAgentHandler():
 
     def _init_environment(self):
 
-        action_batch = torch.full([self._conf.train.batch_size, 1, self._yolo_handler.n_prunable_layers], -1.0)
-        state_batch = torch.full([self._conf.train.batch_size, 2, self._yolo_handler.n_prunable_layers], -1.0) # TODO n_features
-        sparsb_prev = torch.full([self._conf.train.batch_size], -1.0)
-        dmapb_prev = torch.full([self._conf.train.batch_size], -1.0)
+        action_batch = torch.full([self._conf.train.batch_size, 1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
+        state_batch = torch.full([self._conf.train.batch_size, len(self._state_features)-1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
+        sparsb_prev = torch.full([self._conf.train.batch_size], -1.0).to(self._device)
+        dmapb_prev = torch.full([self._conf.train.batch_size], -1.0).to(self._device)
 
         return action_batch, state_batch, sparsb_prev, dmapb_prev
 
