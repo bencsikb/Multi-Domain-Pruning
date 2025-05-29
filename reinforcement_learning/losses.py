@@ -20,22 +20,21 @@ def get_discounted_reward(
         torch.Tensor: Normalized discounted cumulative rewards.
     """
     disc_rewards = []
-    val = 0.0  # Assumed terminal value
+    val = torch.zeros_like(rewards[0])  # ensure tensor type
 
     for i in reversed(range(len(rewards))):
         val = rewards[i] + gamma * val
         disc_rewards.insert(0, val)
 
-    disc_rewards = torch.tensor(disc_rewards, dtype=torch.float32, device=rewards[0].device)
-    out = disc_rewards - disc_rewards.mean()
-    out /= disc_rewards.std() + 1e-8  # Add epsilon to avoid division by zero
-
+    disc_rewards = torch.stack(disc_rewards)
+    out = (disc_rewards - disc_rewards.mean()) / (disc_rewards.std() + 1e-8)
     return out
+
 
 
 def get_advantage(
     rewards: List[torch.Tensor],
-    values: torch.Tensor,
+    values: List[torch.Tensor],
     gamma: float = 0.99
 ) -> torch.Tensor:
     """
@@ -50,8 +49,8 @@ def get_advantage(
         torch.Tensor: Advantage values.
     """
     disc_rewards = get_discounted_reward(rewards, values, gamma)
-    advantage = disc_rewards - values
-    return advantage
+    advantage = disc_rewards - torch.stack(values)
+    return advantage # TODO? (advantage - advantage.mean()) / (advantage.std() + 1e-8)
 
 
 class CriticLoss(nn.Module):
@@ -93,8 +92,8 @@ class ActorLoss(nn.Module):
         rewards: List[torch.Tensor],
         values: torch.Tensor,
         policies: torch.Tensor,
-        log_probs: torch.Tensor,
-        entropies: Optional[List[torch.Tensor]] = [],
+        log_probs: List[torch.Tensor],
+        entropies: Optional[List[torch.Tensor]] = None,
         ent_coef: float = 0.5,
         gamma: float = 0.99
     ) -> torch.Tensor:
@@ -113,11 +112,13 @@ class ActorLoss(nn.Module):
         """
         advantage = get_advantage(rewards, values, gamma)
 
-        if entropies:
-            ent = ent_coef * torch.mean(torch.stack(entropies))
-            loss = - (log_probs * advantage + ent).mean()
+        if entropies is not None and len(entropies) > 0:
+            entropy_tensor = torch.stack(entropies)
+            ent = ent_coef * entropy_tensor.mean()
+            loss = - (torch.stack(log_probs) * advantage + ent).mean()
         else:
-            loss = - (log_probs * advantage).mean()
+            loss = - (torch.stack(log_probs) * advantage).mean()
+
 
         return loss
 
@@ -136,7 +137,7 @@ class ActorPPOLoss(nn.Module):
         policies: torch.Tensor,
         log_probs: torch.Tensor,
         log_probs_prev: torch.Tensor,
-        entropies: Optional[List[torch.Tensor]] = [],
+        entropies: Optional[List[torch.Tensor]] = None,
         ent_coef: float = 0.5,
         gamma: float = 0.99,
         eps: float = 0.2

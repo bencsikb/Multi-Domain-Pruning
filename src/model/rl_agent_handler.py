@@ -170,7 +170,6 @@ class RLAgentHandler():
                 # --- 3b. Get / Update State ---
                 #self._model_pruner.increment_layer()
                 #self._model_pruner.update_state()
-                state_batch = self._update_state_batch(layer_i, state_batch, sparsb_prev, dmapb_prev)
 
                 # --- 3c. Actorm, Critic Forward ---  
                 state_batch_flattened = state_batch.view([self._conf.train.batch_size, -1])
@@ -185,24 +184,31 @@ class RLAgentHandler():
                 policy = probs.gather(-1, action.unsqueeze(0))
                 entropy = - (probs * log_softmax).sum(1, keepdim=True)
 
-                for i in range(self._conf.train.batch_size): # TODO: make it more "pythonic"
-                    action_batch[i, :, layer_i] = self._possible_alphas[action[layer_i]] # TODO: normalize alpha
+                with torch.no_grad():
+                    for i in range(self._conf.train.batch_size):
+                        action_batch[i, :, layer_i] = self._possible_alphas[action[layer_i]]
+
+                # for i in range(self._conf.train.batch_size): # TODO: make it more "pythonic"
+                #     action_batch[i, :, layer_i] = self._possible_alphas[action[layer_i]] # TODO: normalize alpha
                 
                 # --- 3e. Log Layer Info ---
                 # --- 3f. Save Actions ---
 
-                # --- 3g. Predict Error & Sparsity --                
+                # --- 3g. Predict Error & Sparsity --     
+                #    spn_input_data shape = [batch_size, n_features * n_prunable_layers]          
                 spn_input_data = torch.cat((action_batch, state_batch), dim=1).view([self._conf.train.batch_size, -1]) # .type(torch.float32).to(device)
                 prediction = self._spn_handler.predict(spn_input_data)
-                decoded_prediction = self._coder.decode_label(prediction)
+                decoded_prediction = self._coder.decode_label(prediction) # Tuple([batch_size], [batch_size])
                 sparsb, dmapb = decoded_prediction['spars'], decoded_prediction['dmap']
+                state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb)
+
 
                 # --- 3h. Compute Reward ---
-                reward = self._get_reward(self._conf.reward.type, sparsb, dmapb)
+                reward = self._get_reward(self._conf.reward.type, sparsb, dmapb) # [batch_size, 1]
 
                 # --- 3i. Save Trajectory Step ---
                 sparsb_prev = sparsb.clone()
-                dmapb_prev = dmapb_prev.clone()
+                dmapb_prev = dmapb.clone()
 
                 log_probs.append(log_prob)  
                 entropies.append(entropy)  
@@ -214,34 +220,34 @@ class RLAgentHandler():
                
 
             # === 5. Select Best Result from the batch ==
-                
-            best_idx = self._coder.decode_label(dmapb[-1, :, 0]).argmin() # TODO list2floatTensor [n_prunableLayers, batch_size, 1]
-            best_spars = self._coder.decode_label(states[-1][best_idx, -1, -1]).item()
-            best_dmap = self._coder.decode_label(dmapb[-1, best_idx, 0]).item() # TODO list2FloatTensor
-            best_alpha_seq = ... # TODO decode alpha denormalize(actions[-1][bidx, 0, :], 0, 2.2)
+            
+            best_idx = states[-1][:, 1, -1].argmin() # best dmap index
+            best_results = self._coder.decode_label(states[-1][best_idx, :, -1]) # Tuple (spard, dmap)
+            best_alpha_seq = ...
 
             # === 6. Compute Returns ===
-            returns = self._get_discounted_reward(reward, values, gamma=0.99)
+            #returns = self._get_discounted_reward(reward, values, gamma=0.99)
 
             # === 7. Prepare Log Probs ===
-            if self._episode == 0:
-                log_probs_prev = torch.zeros(log_probs.shape)
+            if self._episode == 0:  #TODO why do we need this?
+                log_probs_prev = torch.zeros(torch.stack(log_probs).shape)
             else:            
                 log_probs_prev = log_probs_prev.detach()
 
             # === 8. Compute Losses ===
             critic_loss = self._critic_loss(rewards, values, 0.99)
-            actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._conf.model.actor_entory_coef, gamma=0.99)
+            actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._conf.model.actor_entropy_coef, gamma=0.99)
     
             # === 9. Backpropagation ===
             self._actor_optimizer.zero_grad()
             self._critic_optimizer.zero_grad()
 
             final_loss = actor_loss + critic_loss
+            torch.autograd.set_detect_anomaly(True)
             final_loss.backward(retain_graph=True)
 
-            reward_backprop = rewards.mean()
-            (-reward_backprop).backward()
+            #TODO reward_backprop = rewards.mean() 
+            #(-reward_backprop).backward()
 
             self._actor_optimizer.step()
             self._critic_optimizer.step()
@@ -337,8 +343,10 @@ class RLAgentHandler():
 
         # Only spars and dmap prev.
 
-        state_batch[:, 0, layer_i] = sparsb_prev
-        state_batch[:, 1, layer_i] = dmapb_prev
+        with torch.no_grad():
+            state_batch = state_batch.clone()
+            state_batch[:, 0, layer_i] = sparsb_prev
+            state_batch[:, 1, layer_i] = dmapb_prev
 
         return state_batch
     
