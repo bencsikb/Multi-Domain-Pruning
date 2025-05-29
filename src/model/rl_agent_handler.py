@@ -1,6 +1,7 @@
 import os
 import torch
-from typing import List
+from torch import Tensor
+from typing import List, Tuple
 from types import SimpleNamespace
 
 from utils.tensorboard_handler import TensorboardHandler
@@ -26,8 +27,9 @@ class RLAgentHandler():
         self._tb_handler = tb_handler
         self._log_dir_path = os.path.join(conf.save.root, run_name)
 
+        self._do_folder_logging = True # TODO shoould come from config
+
         # Load configs
-        self._conf = conf
         self._spn_conf = self._get_spn_config()
         self._samples_conf = self._get_samples_config()
 
@@ -167,10 +169,6 @@ class RLAgentHandler():
             # === 3. Iterate Over Layers ===
             for layer_i, layer in enumerate(self._yolo_handler.prunable_layers):
 
-                # --- 3b. Get / Update State ---
-                #self._model_pruner.increment_layer()
-                #self._model_pruner.update_state()
-
                 # --- 3c. Actorm, Critic Forward ---  
                 state_batch_flattened = state_batch.view([self._conf.train.batch_size, -1])
                 probs, action_dist, log_softmax = self._actor_model(state_batch_flattened)
@@ -187,9 +185,6 @@ class RLAgentHandler():
                 with torch.no_grad():
                     for i in range(self._conf.train.batch_size):
                         action_batch[i, :, layer_i] = self._possible_alphas[action[layer_i]]
-
-                # for i in range(self._conf.train.batch_size): # TODO: make it more "pythonic"
-                #     action_batch[i, :, layer_i] = self._possible_alphas[action[layer_i]] # TODO: normalize alpha
                 
                 # --- 3e. Log Layer Info ---
                 # --- 3f. Save Actions ---
@@ -220,10 +215,6 @@ class RLAgentHandler():
                
 
             # === 5. Select Best Result from the batch ==
-            
-            best_idx = states[-1][:, 1, -1].argmin() # best dmap index
-            best_results = self._coder.decode_label(states[-1][best_idx, :, -1]) # Tuple (spard, dmap)
-            best_alpha_seq = ...
 
             # === 6. Compute Returns ===
             #returns = self._get_discounted_reward(reward, values, gamma=0.99)
@@ -252,7 +243,11 @@ class RLAgentHandler():
             self._actor_optimizer.step()
             self._critic_optimizer.step()
 
-            # === 10. Logging ===
+            # === 10. Logging ===                        
+            best_idx = states[-1][:, 1, -1].argmin() # best dmap index
+            best_results = self._coder.decode_label(states[-1][best_idx, :, -1]) # Tuple (spard, dmap)
+            best_alpha_seq = ...
+            self._tb_logging(actions[-1], best_results)
 
             # === 11. Save Checkpoint ===
 
@@ -286,48 +281,7 @@ class RLAgentHandler():
                                          # init_params TODO
 
         return reward.unsqueeze(1)
-    
-
-    def _get_discounted_reward(self, rewards, gamma):
-        """
-        Compute normalized discounted cumulative rewards.
-
-        Args:
-            rewards (List[Tensor] or Tensor): Sequence of rewards.
-            gamma (float): Discount factor.
-
-        Returns:
-            Tensor: Normalized discounted reward tensor.
-        """
-        disc_rewards = []
-        val = 0.0
-        for i in reversed(range(len(rewards))):
-            val = rewards[i] + gamma * val
-            disc_rewards.insert(0, val)
-
-        disc_rewards = torch.tensor(disc_rewards, dtype=torch.float32, device=rewards[0].device)
-        out = disc_rewards - disc_rewards.mean()
-        out /= disc_rewards.std() + 1e-8  # prevent division by zero
-
-        return out
-
-    def _get_advantage(self, rewards, values, gamma=0.99):
-        """
-        Compute advantage as the difference between discounted rewards and value predictions.
-
-        Args:
-            rewards (List[Tensor] or Tensor): Rewards per step.
-            values (Tensor): Value function estimates.
-            gamma (float): Discount factor.
-
-        Returns:
-            Tensor: Advantage values.
-        """
-        disc_rewards = self._get_discounted_reward(rewards, gamma)
-        return disc_rewards - values
-
-
-    
+        
 
     def _init_environment(self):
 
@@ -349,6 +303,24 @@ class RLAgentHandler():
             state_batch[:, 1, layer_i] = dmapb_prev
 
         return state_batch
+
+    def _tb_logging(self, actions_batch: Tensor, best_results: Tuple):
+        
+        # Log batch mean and std of action for each prunable layer
+        actions_avg = torch.mean(actions_batch[:,0,:], dim = 0)
+        actions_std = torch.std(actions_batch[:,0,:], dim = 0)
+        for i, (avg, std) in enumerate(zip(actions_avg, actions_std)):
+            self._tb_handler.log_scalar(avg.item(), self._episode, name=F"mean/layer_{i}", tag_ext="actions")
+            self._tb_handler.log_scalar(std.item(), self._episode, name=F"std/layer_{i}", tag_ext="actions")
+        
+        # Log best results: 
+        self._tb_handler.log_scalar(best_results['spars'].item(), self._episode, name="spars", tag_ext="bests")
+        self._tb_handler.log_scalar(best_results['dmap'].item(), self._episode, name="dmap", tag_ext="bests")
+
+
+
+    def _folder_logging(self):
+        pass
     
 
     def _init_action_sequence(self):
