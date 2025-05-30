@@ -6,6 +6,7 @@ from typing import List, Tuple
 from types import SimpleNamespace
 
 from utils.tensorboard_handler import TensorboardHandler
+from utils.common_utils import normalize, denormalize
 from src.model.yolo_handler import YoloHandler
 from src.model.spn_handler import SPNHandler
 from utils.config_parser import ConfigParser
@@ -190,12 +191,11 @@ class RLAgentHandler():
 
                 with torch.no_grad():
                     for i in range(self._conf.train.batch_size):
-                        action_batch[i, :, layer_i] = self._possible_alphas[action[layer_i]]
+                        alpha_range = [self._possible_alphas[0], self._possible_alphas[-1]]
+                        action_batch[i, :, layer_i] = normalize(self._possible_alphas[action[layer_i]], value_range=alpha_range)
                 
                 # --- 3e. Log Layer Info ---
                 self._tb_logging_probs(layer_i, probs)
-
-                # --- 3f. Save Actions ---
 
                 # --- 3g. Predict Error & Sparsity --     
                 #    spn_input_data shape = [batch_size, n_features * n_prunable_layers]          
