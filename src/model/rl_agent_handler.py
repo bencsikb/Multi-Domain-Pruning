@@ -1,5 +1,6 @@
 import os
 import torch
+import pandas as pd
 from torch import Tensor
 from typing import List, Tuple
 from types import SimpleNamespace
@@ -27,7 +28,8 @@ class RLAgentHandler():
         self._tb_handler = tb_handler
         self._log_dir_path = os.path.join(conf.save.root, run_name)
 
-        self._do_folder_logging = True # TODO shoould come from config
+        self._do_folder_logging = self._conf.train.do_folder_logging 
+        self._save_interval = self._conf.train.save_interval 
 
         # Load configs
         self._spn_conf = self._get_spn_config()
@@ -42,6 +44,10 @@ class RLAgentHandler():
         self._n_prunable_layers = self._get_n_prunable_layers()
 
         self._state_features = self._spn_conf.model.state_features
+
+        self._results_df = pd.DataFrame([], columns = ["spars", "dmap", "alpha_seq"])
+        self._best_results_df = pd.DataFrame([], columns = ["spars", "dmap", "alpha_seq"])
+
     
     def _get_spn_config(self) -> SimpleNamespace:
 
@@ -187,6 +193,8 @@ class RLAgentHandler():
                         action_batch[i, :, layer_i] = self._possible_alphas[action[layer_i]]
                 
                 # --- 3e. Log Layer Info ---
+                self._tb_logging_probs(layer_i, probs)
+
                 # --- 3f. Save Actions ---
 
                 # --- 3g. Predict Error & Sparsity --     
@@ -213,9 +221,6 @@ class RLAgentHandler():
                 values.append(q_value)  
                 policies.append(policy)  
                
-
-            # === 5. Select Best Result from the batch ==
-
             # === 6. Compute Returns ===
             #returns = self._get_discounted_reward(reward, values, gamma=0.99)
 
@@ -243,11 +248,10 @@ class RLAgentHandler():
             self._actor_optimizer.step()
             self._critic_optimizer.step()
 
-            # === 10. Logging ===                        
-            best_idx = states[-1][:, 1, -1].argmin() # best dmap index
-            best_results = self._coder.decode_label(states[-1][best_idx, :, -1]) # Tuple (spard, dmap)
-            best_alpha_seq = ...
-            self._tb_logging(actions[-1], best_results)
+            # === 10. Logging ===       
+            self._update_results(states, actions)     
+            self._tb_logging(actions[-1])
+            self._folder_logging()
 
             # === 11. Save Checkpoint ===
 
@@ -303,26 +307,65 @@ class RLAgentHandler():
             state_batch[:, 1, layer_i] = dmapb_prev
 
         return state_batch
+    
 
-    def _tb_logging(self, actions_batch: Tensor, best_results: Tuple):
+    def _update_results(self, states, actions):
+        """
+        self._results:  [batch_size, 3] -> columns: spars: [1], dmap: [1], alpha_seq: [n_prunable_layers]
+                        Overwritten in each episode.
+
+        self._best_results: [n_episodes, 3] -> columns: spars: [1], dmap: [1], alpha_seq: [n_prunable_layers]
+                            Expanded with one row in each episode.
+        """
+
+        best_idx = states[-1][:, 1, -1].argmin() # best dmap index
+        best_results = self._coder.decode_label(states[-1][best_idx, :, -1]) # Tuple (spard, dmap)
+        best_alpha_seq = actions[-1][best_idx, 0, :]
+        self._best_results_df.loc[self._episode] = [float(best_results['spars']), float(best_results['dmap']), best_alpha_seq.tolist()]
+
+        del self._results_df
+        self._results_df = pd.DataFrame({
+                "spars":  states[-1][:,0,-1].tolist(),
+                "dmap": states[-1][:,1,-1].tolist(),
+                "alpha_seq": actions[-1][:,0,:].tolist()
+            })
+
+    def _tb_logging(self, actions_batch: Tensor):
         
         # Log batch mean and std of action for each prunable layer
-        actions_avg = torch.mean(actions_batch[:,0,:], dim = 0)
+        actions_avg = torch.mean(actions_batch[:,0,:], dim = 0) # TODO: could be done with self._results_df
         actions_std = torch.std(actions_batch[:,0,:], dim = 0)
         for i, (avg, std) in enumerate(zip(actions_avg, actions_std)):
             self._tb_handler.log_scalar(avg.item(), self._episode, name=F"mean/layer_{i}", tag_ext="actions")
             self._tb_handler.log_scalar(std.item(), self._episode, name=F"std/layer_{i}", tag_ext="actions")
         
         # Log best results: 
-        self._tb_handler.log_scalar(best_results['spars'].item(), self._episode, name="spars", tag_ext="bests")
-        self._tb_handler.log_scalar(best_results['dmap'].item(), self._episode, name="dmap", tag_ext="bests")
+        self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'spars'], self._episode, name="spars", tag_ext="bests")
+        self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'dmap'], self._episode, name="dmap", tag_ext="bests")
 
+    def _tb_logging_probs(self, layer_i, probs):
+        
+        # Calculate mean over the barch -> [n_possible_alpha]
+        mean_probs = torch.mean(probs, dim=0)
+        for i, prob in enumerate(mean_probs):
+            self._tb_handler.log_scalar(prob.item(), self._episode, name=F"alpha_{self._possible_alphas[i]}", tag_ext=F"layer_{layer_i}")
 
 
     def _folder_logging(self):
-        pass
+
+        if not self._do_folder_logging:
+            return
+
+        folder_path = os.path.join(self._log_dir_path, "logs")
+        if not os.path.exists(folder_path):
+            os.mkdir(folder_path)
+        
+        self._best_results_df.to_pickle(os.path.join(folder_path, "bests.pkl")) # TODO handle if resumed
+        if self._episode % self._save_interval == 0:
+            self._results_df.to_pickle(os.path.join(folder_path, F"{self._episode}.pkl"))
     
 
+    
     def _init_action_sequence(self):
         pass
 
