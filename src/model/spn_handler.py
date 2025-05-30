@@ -9,9 +9,9 @@ from torch.utils.data import DataLoader
 from utils.tensorboard_handler import TensorboardHandler
 
 from state_predictor.model import SPN, SPNMultihead
-from state_predictor.utils import calculate_metrics, denormalize
+from state_predictor.metrics import calculate_metrics
 from utils.losses import LogCoshLoss
-from utils.common_utils import set_seed
+from utils.common_utils import set_seed, denormalize
 
 
 class SPNHandler:

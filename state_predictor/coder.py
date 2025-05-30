@@ -4,7 +4,7 @@ import pandas as pd
 from pandas.core.series import Series
 from typing import Tuple
 
-from state_predictor.utils import normalize, denormalize
+from utils.common_utils import normalize, denormalize
 
 
 class Coder:
