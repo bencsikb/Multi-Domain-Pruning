@@ -250,7 +250,7 @@ class RLAgentHandler():
 
             # === 10. Logging ===       
             self._update_results(states, actions)     
-            self._tb_logging(actions[-1])
+            self._tb_logging(actions[-1], rewards)
             self._folder_logging()
 
             # === 11. Save Checkpoint ===
@@ -330,7 +330,7 @@ class RLAgentHandler():
                 "alpha_seq": actions[-1][:,0,:].tolist()
             })
 
-    def _tb_logging(self, actions_batch: Tensor):
+    def _tb_logging(self, actions_batch: Tensor, rewards: List[Tensor]):
         
         # Log batch mean and std of action for each prunable layer
         actions_avg = torch.mean(actions_batch[:,0,:], dim = 0) # TODO: could be done with self._results_df
@@ -342,6 +342,13 @@ class RLAgentHandler():
         # Log best results: 
         self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'spars'], self._episode, name="spars", tag_ext="bests")
         self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'dmap'], self._episode, name="dmap", tag_ext="bests")
+
+        #Log reward
+        for i, reward in enumerate(rewards):
+            reward_avg = torch.mean(reward)
+            self._tb_handler.log_scalar(reward_avg.item(), self._episode, name=F"layer_{i}", tag_ext="_rewards")
+
+
 
     def _tb_logging_probs(self, layer_i, probs):
         
