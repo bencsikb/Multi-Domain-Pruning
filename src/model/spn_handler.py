@@ -96,6 +96,8 @@ class SPNHandler:
             loss_func = LogCoshLoss()
         elif self._model_conf.loss == "mse":
             loss_func = nn.MSELoss()
+        elif self._model_conf.loss == "l1":
+            loss_func = nn.L1Loss()
         
         return loss_func
     
