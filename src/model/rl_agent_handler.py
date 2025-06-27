@@ -252,7 +252,7 @@ class RLAgentHandler():
 
             # === 10. Logging ===       
             self._update_results(states, actions)     
-            self._tb_logging(actions[-1], rewards)
+            self._tb_logging(actions[-1], rewards, actor_loss, critic_loss)
             self._folder_logging()
 
             # === 11. Save Checkpoint ===
@@ -332,18 +332,21 @@ class RLAgentHandler():
                 "alpha_seq": actions[-1][:,0,:].tolist()
             })
 
-    def _tb_logging(self, actions_batch: Tensor, rewards: List[Tensor]):
+    def _tb_logging(self, actions_batch: Tensor, rewards: List[Tensor], actor_loss: Tensor, critic_loss: Tensor):
         
         # Log batch mean and std of action for each prunable layer
-        actions_avg = torch.mean(actions_batch[:,0,:], dim = 0) # TODO: could be done with self._results_df
-        actions_std = torch.std(actions_batch[:,0,:], dim = 0)
+        actions_avg = denormalize(torch.mean(actions_batch[:,0,:], dim = 0), value_range=self._samples_conf.alpha.min_max_steps[:2]) # TODO: could be done with self._results_df
+        actions_std = denormalize(torch.std(actions_batch[:,0,:], dim = 0), value_range=self._samples_conf.alpha.min_max_steps[:2])
         for i, (avg, std) in enumerate(zip(actions_avg, actions_std)):
             self._tb_handler.log_scalar(avg.item(), self._episode, name=F"mean/layer_{i}", tag_ext="actions")
             self._tb_handler.log_scalar(std.item(), self._episode, name=F"std/layer_{i}", tag_ext="actions")
         
         # Log best results: 
-        self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'spars'], self._episode, name="spars", tag_ext="bests")
-        self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'dmap'], self._episode, name="dmap", tag_ext="bests")
+        self._tb_handler.log_scalar(actor_loss.item(), self._episode, name="actor_loss", tag_ext="_results")
+        self._tb_handler.log_scalar(critic_loss.item(), self._episode, name="critic_loss", tag_ext="_results")
+        self._tb_handler.log_scalar(torch.mean(rewards[-1]).item(), self._episode, name=F"_final_reward", tag_ext="_results")
+        self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'spars'], self._episode, name="best_spars", tag_ext="_results")
+        self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'dmap'], self._episode, name="best_dmap", tag_ext="_results")
 
         #Log reward
         for i, reward in enumerate(rewards):
