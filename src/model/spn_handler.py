@@ -36,7 +36,12 @@ class SPNHandler:
         from src.training_components import get_loss_function, get_optimizer, get_lr_scheduler
 
         input_size = self._model_conf.n_prunable_layers * len(self._state_features)
-        self._model = SPNMultihead(input_size).to(self._device)
+        if self._model_conf.multihead:
+            self._model = SPNMultihead(input_size)
+        else:
+            self._model = SPN(input_size, self._model_conf.output_size)
+        self._model.to(self._device)
+        
         self._optimizer = get_optimizer(type = self._model_conf.optimizer,
                                         model = self._model,
                                         lr = self._model_conf.start_lr,
