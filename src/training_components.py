@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 
 from torch.optim import Optimizer
 from utils.losses import LogCoshLoss
@@ -8,6 +9,8 @@ def get_loss_function(type: str) : #TODO ret type
         
         if type == "logcosh":
             loss_func = LogCoshLoss()
+        elif type == "l1":
+             loss_func = nn.L1Loss()
         
         return loss_func
     
