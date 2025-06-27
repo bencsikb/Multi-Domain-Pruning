@@ -120,10 +120,7 @@ class Coder:
             values = normalize(values.values, col_range_map[col])
             encoded_state.append(values.astype(np.float32))
 
-        # Stack: shape [n_features_active, n_prunable_layers] → transpose
-        encoded_state = np.stack(encoded_state, axis=0).T  # shape [n_prunable_layers, n_features_active]
-
-        # Flatten
+        encoded_state = np.stack(encoded_state, axis=0)  
         return torch.tensor(encoded_state.flatten(), dtype=torch.float32)
 
 
