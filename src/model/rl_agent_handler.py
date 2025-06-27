@@ -201,17 +201,19 @@ class RLAgentHandler():
                 #    spn_input_data shape = [batch_size, n_features * n_prunable_layers]          
                 spn_input_data = torch.cat((action_batch, state_batch), dim=1).view([self._conf.train.batch_size, -1]) # .type(torch.float32).to(device)
                 prediction = self._spn_handler.predict(spn_input_data)
-                decoded_prediction = self._coder.decode_label(prediction) # Tuple([batch_size], [batch_size])
-                sparsb, dmapb = decoded_prediction['spars'], decoded_prediction['dmap']
-                state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb)
+                sparsb, dmapb = prediction[0], prediction[1]
 
+                # Update state batc
+                state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
+
+                # Decode predictions
+                decoded_prediction = self._coder.decode_label(prediction) # Tuple([batch_size], [batch_size])
+                decoded_sparsb, decoded_dmapb = decoded_prediction['spars'], decoded_prediction['dmap']
 
                 # --- 3h. Compute Reward ---
-                reward = self._get_reward(self._conf.reward.type, sparsb, dmapb) # [batch_size, 1]
+                reward = self._get_reward(self._conf.reward.type, decoded_sparsb, decoded_dmapb) # [batch_size, 1]
 
                 # --- 3i. Save Trajectory Step ---
-                sparsb_prev = sparsb.clone()
-                dmapb_prev = dmapb.clone()
 
                 log_probs.append(log_prob)  
                 entropies.append(entropy)  
