@@ -17,7 +17,7 @@ class TensorboardHandler():
 
     def log_scalar(self, metric: Any, epoch: int, name: str, tag_ext: str) -> None: # TODO specify Any
         
-        tag = f"{tag_ext}/{tag_ext}/{name}"
+        tag = f"{tag_ext}/{name}"
         self._writer.add_scalar(tag, metric, epoch)
 
     def log_hparams(self, hparams: Dict[str, Any], metric_dict) -> None:
