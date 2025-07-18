@@ -4,9 +4,10 @@ import pandas as pd
 from torch import Tensor
 from typing import List, Tuple
 from types import SimpleNamespace
+import numpy as np
 
 from utils.tensorboard_handler import TensorboardHandler
-from utils.common_utils import normalize, denormalize
+from utils.common_utils import normalize, denormalize, set_seed
 from src.model.yolo_handler import YoloHandler
 from src.model.spn_handler import SPNHandler
 from utils.config_parser import ConfigParser
@@ -42,7 +43,8 @@ class RLAgentHandler():
         self._coder = self._initialize_coder()
 
         self._possible_alphas = self._get_alphas()
-        self._n_prunable_layers = self._get_n_prunable_layers()
+        self._n_prunable_layers = self._get_n_prunable_layers() 
+        set_seed(self._conf.train.seed)
 
         self._state_features = self._spn_conf.model.state_features
 
@@ -192,7 +194,7 @@ class RLAgentHandler():
                 with torch.no_grad():
                     for i in range(self._conf.train.batch_size):
                         alpha_range = [self._possible_alphas[0], self._possible_alphas[-1]]
-                        action_batch[i, :, layer_i] = normalize(self._possible_alphas[action[layer_i]], value_range=alpha_range)
+                        action_batch[i, :, layer_i] = normalize(self._possible_alphas[action[i]], value_range=alpha_range)
                 
                 # --- 3e. Log Layer Info ---
                 self._tb_logging_probs(layer_i, probs)
@@ -292,9 +294,9 @@ class RLAgentHandler():
     def _init_environment(self):
 
         action_batch = torch.full([self._conf.train.batch_size, 1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
-        state_batch = torch.full([self._conf.train.batch_size, len(self._state_features)-1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
-        sparsb_prev = torch.full([self._conf.train.batch_size], -1.0).to(self._device)
-        dmapb_prev = torch.full([self._conf.train.batch_size], -1.0).to(self._device)
+        state_batch = torch.full([self._conf.train.batch_size, len(self._state_features)-1, self._yolo_handler.n_prunable_layers], 1.0).to(self._device)
+        sparsb_prev = torch.full([self._conf.train.batch_size], 1.0).to(self._device)
+        dmapb_prev = torch.full([self._conf.train.batch_size], 1.0).to(self._device)
 
         return action_batch, state_batch, sparsb_prev, dmapb_prev
 
@@ -383,6 +385,3 @@ class RLAgentHandler():
 
     def _update_action_sequence(self):
         pass
-
-
-
