@@ -48,8 +48,8 @@ class RLAgentHandler():
 
         self._state_features = self._spn_conf.model.state_features
 
-        self._results_df = pd.DataFrame([], columns = ["spars", "dmap", "alpha_seq"])
-        self._best_results_df = pd.DataFrame([], columns = ["spars", "dmap", "alpha_seq"])
+        self._results_df = pd.DataFrame([], columns = ["reward", "spars", "dmap", "alpha_seq"])
+        self._best_results_df = pd.DataFrame([], columns = ["reward", "spars", "dmap", "alpha_seq"])
 
     
     def _get_spn_config(self) -> SimpleNamespace:
@@ -253,7 +253,7 @@ class RLAgentHandler():
             self._critic_optimizer.step()
 
             # === 10. Logging ===       
-            self._update_results(states, actions)     
+            self._update_results(rewards, states, actions)     
             self._tb_logging(actions[-1], rewards, actor_loss, critic_loss)
             self._folder_logging()
 
@@ -313,22 +313,26 @@ class RLAgentHandler():
         return state_batch
     
 
-    def _update_results(self, states, actions):
+    def _update_results(self, rewards, states, actions):
         """
-        self._results:  [batch_size, 3] -> columns: spars: [1], dmap: [1], alpha_seq: [n_prunable_layers]
+        self._results:  [batch_size, 4] -> columns: reward: [1], spars: [1], dmap: [1], alpha_seq: [n_prunable_layers]
                         Overwritten in each episode.
 
-        self._best_results: [n_episodes, 3] -> columns: spars: [1], dmap: [1], alpha_seq: [n_prunable_layers]
+        self._best_results: [n_episodes, 4] -> columns: reward: [1], spars: [1], dmap: [1], alpha_seq: [n_prunable_layers]
                             Expanded with one row in each episode.
         """
 
         best_idx = states[-1][:, 1, -1].argmin() # best dmap index
         best_results = self._coder.decode_label(states[-1][best_idx, :, -1]) # Tuple (spard, dmap)
         best_alpha_seq = actions[-1][best_idx, 0, :]
-        self._best_results_df.loc[self._episode] = [float(best_results['spars']), float(best_results['dmap']), best_alpha_seq.tolist()]
+        self._best_results_df.loc[self._episode] = [float(rewards[-1][best_idx, 0].cpu()),
+                                                    float(best_results['spars']), 
+                                                    float(best_results['dmap']), 
+                                                    best_alpha_seq.tolist()]
 
         del self._results_df
         self._results_df = pd.DataFrame({
+                "reward": rewards[-1][:, 0].cpu().tolist(),
                 "spars":  states[-1][:,0,-1].tolist(),
                 "dmap": states[-1][:,1,-1].tolist(),
                 "alpha_seq": actions[-1][:,0,:].tolist()
@@ -385,3 +389,17 @@ class RLAgentHandler():
 
     def _update_action_sequence(self):
         pass
+
+    def get_best_results(self):
+        """ Returns the episode in which best results were achieved during training, together with the results.
+            Used for hyperparameter optimization.
+        
+        Output: 
+            episode (int), reward (float) and corresponding spars (float), dmap (float), alpha_seq (list). 
+        """
+        best_idx = self._best_results_df['reward'].idxmax()
+        best_row = self._best_results_df.loc[best_idx]
+        return int(best_idx), float(best_row["reward"]), float(best_row["spars"]), float(best_row["dmap"]), best_row["alpha_seq"]
+
+
+
