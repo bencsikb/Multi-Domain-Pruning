@@ -39,3 +39,29 @@ def get_lr_scheduler(type: str, epochs: int, optimizer):
                                                                 last_epoch=-1)
 
     return lr_sched
+
+import math
+
+def general_cosine_scheduler(min_val, max_val, epochs, direction='down'):
+    """
+    Returns a list of values scheduled over `epochs` using a cosine curve.
+
+    Args:
+        min_val (float): Minimum value of the schedule.
+        max_val (float): Maximum value of the schedule.
+        epochs (int): Total number of steps (e.g., training epochs).
+        direction (str): 'down' (default) or 'up'.
+
+    Returns:
+        List[float]: Scheduled values of length `epochs`.
+    """
+    assert direction in {'up', 'down'}, "Direction must be 'up' or 'down'"
+
+    values = []
+    for i in range(epochs):
+        cosine = 0.5 * (1 + math.cos(math.pi * i / (epochs - 1)))
+        val = min_val + (max_val - min_val) * cosine if direction == 'down' else \
+              max_val - (max_val - min_val) * cosine
+        values.append(val)
+
+    return values

@@ -11,7 +11,7 @@ from utils.common_utils import normalize, denormalize, set_seed
 from src.model.yolo_handler import YoloHandler
 from src.model.spn_handler import SPNHandler
 from utils.config_parser import ConfigParser
-from src.training_components import get_optimizer, get_lr_scheduler
+from src.training_components import get_optimizer, get_lr_scheduler, general_cosine_scheduler
 #from pruning.model_pruner.stepwise_rl_pruner import StepWiseRLPruner
 from pruning.model_pruner.stepwise_pruner import StepWisePruner
 from pruning.channel_selection.channel_selector import ChannelSelector
@@ -154,6 +154,11 @@ class RLAgentHandler():
                                               epochs = self._conf.train.episodes,
                                               optimizer = self._actor_optimizer)  
         
+        self._entropy_values = general_cosine_scheduler(min_val = self._conf.model.actor_entropy_coef,
+                                                max_val = 100*self._conf.model.actor_entropy_coef,
+                                                epochs = self._conf.train.episodes,
+                                                direction="up")
+
         self._episode = 0
         # TODO extend with loading pretrained Actor, Critic
 
@@ -236,7 +241,7 @@ class RLAgentHandler():
 
             # === 8. Compute Losses ===
             critic_loss = self._critic_loss(rewards, values, 0.99)
-            actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._conf.model.actor_entropy_coef, gamma=0.99)
+            actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._entropy_values[self._episode], gamma=0.99)
     
             # === 9. Backpropagation ===
             self._actor_optimizer.zero_grad()
@@ -254,7 +259,7 @@ class RLAgentHandler():
 
             # === 10. Logging ===       
             self._update_results(rewards, states, actions)     
-            self._tb_logging(actions[-1], rewards, actor_loss, critic_loss)
+            self._tb_logging(actions[-1], rewards, actor_loss, critic_loss, self._lr_scheduler.get_last_lr()[0], self._entropy_values[self._episode])
             self._folder_logging()
 
             # === 11. Save Checkpoint ===
@@ -338,7 +343,7 @@ class RLAgentHandler():
                 "alpha_seq": actions[-1][:,0,:].tolist()
             })
 
-    def _tb_logging(self, actions_batch: Tensor, rewards: List[Tensor], actor_loss: Tensor, critic_loss: Tensor):
+    def _tb_logging(self, actions_batch: Tensor, rewards: List[Tensor], actor_loss: Tensor, critic_loss: Tensor, lr: float = None, entropy: float = None):
         
         # Log batch mean and std of action for each prunable layer
         actions_avg = denormalize(torch.mean(actions_batch[:,0,:], dim = 0), value_range=self._samples_conf.alpha.min_max_steps[:2]) # TODO: could be done with self._results_df
@@ -358,6 +363,10 @@ class RLAgentHandler():
         for i, reward in enumerate(rewards):
             reward_avg = torch.mean(reward)
             self._tb_handler.log_scalar(reward_avg.item(), self._episode, name=F"layer_{i}", tag_ext="_rewards")
+
+        # Log LR and entropy
+        if lr is not None:  self._tb_handler.log_scalar(lr, self._episode, name="learning_rate", tag_ext="_hyperparams")
+        if lr is not None:  self._tb_handler.log_scalar(entropy, self._episode, name="entropy", tag_ext="_hyperparams")    
 
 
 
