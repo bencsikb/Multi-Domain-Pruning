@@ -256,6 +256,7 @@ class RLAgentHandler():
 
             self._actor_optimizer.step()
             self._critic_optimizer.step()
+            self._lr_scheduler.step()
 
             # === 10. Logging ===       
             self._update_results(rewards, states, actions)     
