@@ -12,10 +12,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--fantasy_name', type=str) 
     parser.add_argument('--device', default='')
+    parser.add_argument('--conf', default="config/rl_agent.ini")
     args = parser.parse_args()
 
     # Read and save config file
-    conf = ConfigParser.read("config/rl_agent.ini")
+    conf = ConfigParser.read(args.conf)
 
     # Create logging directory
     run_name = generate_run_name(args.fantasy_name)
@@ -32,6 +33,22 @@ if __name__ == "__main__":
     agent_handler.create()
     agent_handler.train()
 
-    # load pretrained nets: 
-        # - net for pruning --> existing model_handler
-        # - SPN net --> model_handler?
+    # Get best results
+    episode, reward, spars, dmap, _ = agent_handler.get_best_results()
+
+    # Log each flattened metric to both TensorBoard 
+    flattened_metric_dict = {}
+    flattened_metric_dict["episode"] = episode
+    flattened_metric_dict["reward"] = reward
+    flattened_metric_dict["spars"] = spars
+    flattened_metric_dict["dmap"] = dmap
+    
+    tb_handler.log_hparams({
+        'episodes': conf.train.episodes,
+        'batch_size': conf.train.batch_size, 
+        'optimizer': conf.model.actor_optimizer, 
+        'start_lr': conf.model.actor_init_lr, 
+        'weight_decay': conf.model.actor_weight_decay, 
+        'entropy_coef': conf.model.actor_entropy_coef
+    },
+    metric_dict=flattened_metric_dict)
