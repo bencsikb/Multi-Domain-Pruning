@@ -19,9 +19,15 @@ if __name__ == "__main__":
     conf = ConfigParser.read(args.conf)
 
     # Create logging directory
-    run_name = generate_run_name(args.fantasy_name)
-    log_dir = os.path.join(conf.save.root, run_name)
-    os.makedirs(log_dir)
+    if conf.model.pretrained and conf.model.do_resume:
+        log_dir = conf.model.pretrained
+        run_name = os.path.basename(log_dir)
+        conf_path = os.path.join(log_dir, "settings.ini")
+        conf = ConfigParser.read(conf_path)
+    else:
+        run_name = generate_run_name(args.fantasy_name)
+        log_dir = os.path.join(conf.save.root, run_name)
+        os.makedirs(log_dir)
 
     # Save config
     ConfigParser.save(conf, os.path.join(log_dir, "settings.ini"))

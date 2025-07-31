@@ -125,9 +125,41 @@ class RLAgentHandler():
         self._yolo_handler.determine_prunable_layers()
         return self._yolo_handler.n_prunable_layers
 
-    def _load_checkpoint(self):
-        pass
+    
+    def _save_checkpoint(self):
+        checkpoint = {
+            'episode': self._episode,
+            'actor_state_dict': self._actor_model.state_dict(),
+            'critic_stat_dict': self._critic_model.state_dict(),
+            'actor_optimizer': self._actor_optimizer.state_dict(),
+            'critic_optimizer': self._critic_optimizer.state_dict(),
+            'actor_loss': self._actor_loss.state_dict(),
+            'critic_loss': self._critic_loss.state_dict(),
+            'lr_scheduler': self._lr_scheduler.state_dict(),
+            'entropy_values': self._entropy_values
+        }
+        torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint.pt"))
 
+    
+
+    def _load_checkpoint(self, path):
+        checkpoint_path = os.path.join(path, "checkpoint.pt")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu")
+
+        self._actor_model.load_state_dict(checkpoint['actor_state_dict'])
+        self._critic_model.load_state_dict(checkpoint['critic_stat_dict'])
+
+        self._episode = checkpoint.get('episode', 0)
+
+        if self._conf.model.do_resume:
+
+            self._actor_optimizer.load_state_dict(checkpoint['actor_optimizer'])
+            self._critic_optimizer.load_state_dict(checkpoint['critic_optimizer'])
+            self._actor_loss.load_state_dict(checkpoint['actor_loss'])
+            self._critic_loss.load_state_dict(checkpoint['critic_loss'])
+
+            self._lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+            self._entropy_values = checkpoint.get('entropy_values', None)
     
     
     def create(self):
@@ -160,8 +192,10 @@ class RLAgentHandler():
                                                 direction="up")
 
         self._episode = 0
-        # TODO extend with loading pretrained Actor, Critic
 
+        if len(self._conf.model.pretrained):
+            log_path = self._conf.model.pretrained 
+            self._load_checkpoint(log_path)
 
     def train(self):
 
@@ -234,7 +268,7 @@ class RLAgentHandler():
             #returns = self._get_discounted_reward(reward, values, gamma=0.99)
 
             # === 7. Prepare Log Probs ===
-            if self._episode == 0:  #TODO why do we need this?
+            if self._episode == 0 or self._conf.model.pretrained:  
                 log_probs_prev = torch.zeros(torch.stack(log_probs).shape)
             else:            
                 log_probs_prev = log_probs_prev.detach()
@@ -264,6 +298,7 @@ class RLAgentHandler():
             self._folder_logging()
 
             # === 11. Save Checkpoint ===
+            self._save_checkpoint()
 
             # === 12. End of Episode ===
             self._episode += 1
