@@ -10,19 +10,22 @@ from utils.common_utils import generate_run_name
 
 def objective(trial, config, obj_metric):
     # Suggest hyperparameters
-    episodes = trial.suggest_int('episodes', 500, 2000, step=100)
-    batch_size = trial.suggest_categorical('batch_size', [256, 512, 1024, 2048])
+    episodes = trial.suggest_int('episodes', 500, 1500, step=100)
+    batch_size = trial.suggest_categorical('batch_size', [1024, 2048])
 
     optimizer_type = trial.suggest_categorical('optimizer', ['adam']) #, 'lamb'])
     start_lr = trial.suggest_categorical(
-        'start_lr', [c * 10**-e for e in range(2,6) for c in range(1, 10)]
+        'start_lr', [c * 10**-e for e in range(2,4) for c in range(1, 10)]
     )
     weight_decay = trial.suggest_categorical(
         'weight_decay', [c * 10**-e for e in range(2, 6) for c in range(1, 10)]
     )
     entropy_coef = trial.suggest_categorical(
-        'weight_decay', [c * 10**-e for e in range(2, 6) for c in range(1, 10)]
+        'entropy_coef', [c * 10**-e for e in range(3, 6) for c in range(1, 10)]
     )
+    entropy_factor = trial.suggest_categorical('entropy_factor', [ e for e in range(10, 150, 10)])
+    spars_coeff = trial.suggest_categorical('spars_coeff', [0.1, 0.2, 0.3, 0.4, 0.5])
+    dmap_coeff = 1 - spars_coeff
 
 
     # Read config and set hyperparameters
@@ -36,6 +39,9 @@ def objective(trial, config, obj_metric):
     conf.model.actor_weight_decay = weight_decay
     conf.model.critic_weight_decay = weight_decay
     conf.model.actor_entropy_coef = entropy_coef
+    conf.model.entropy_factor = entropy_factor
+    conf.reward.spars_coeff = spars_coeff
+    conf.reward.dmap_coeff = dmap_coeff
 
     # Create logging directory
     run_name =  generate_run_name("optuna")
@@ -67,12 +73,14 @@ def objective(trial, config, obj_metric):
         'optimizer': optimizer_type, 
         'start_lr': start_lr, 
         'weight_decay': weight_decay, 
-        'entropy_coef': entropy_coef
+        'entropy_coef': entropy_coef,
+        'entropy_factor': entropy_factor,
+        'dmap_coeff': dmap_coeff
     },
     metric_dict=flattened_metric_dict)
 
 
-    return flattened_metric_dict[obj_metric] 
+    return - flattened_metric_dict[obj_metric] 
 
 
 if __name__ == '__main__':
