@@ -187,7 +187,7 @@ class RLAgentHandler():
                                               optimizer = self._actor_optimizer)  
         
         self._entropy_values = general_cosine_scheduler(min_val = self._conf.model.actor_entropy_coef,
-                                                max_val = 100*self._conf.model.actor_entropy_coef,
+                                                max_val = self._conf.model.entropy_factor * self._conf.model.actor_entropy_coef,
                                                 epochs = self._conf.train.episodes,
                                                 direction="up")
 
@@ -243,6 +243,8 @@ class RLAgentHandler():
                 spn_input_data = torch.cat((action_batch, state_batch), dim=1).view([self._conf.train.batch_size, -1]) # .type(torch.float32).to(device)
                 prediction = self._spn_handler.predict(spn_input_data)
                 sparsb, dmapb = prediction[0], prediction[1]
+
+                dmap = self._double_check_dmap(dmapb)
 
                 # Update state batc
                 state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
@@ -340,6 +342,23 @@ class RLAgentHandler():
         dmapb_prev = torch.full([self._conf.train.batch_size], 1.0).to(self._device)
 
         return action_batch, state_batch, sparsb_prev, dmapb_prev
+    
+    def _double_check_dmap(self, dmap):
+        """
+        Ensure dmap is not significantly lower than the worst seen so far.
+        If any value in dmap is less than 90% of the worst_dmap, it is replaced with the worst_dmap value.
+        """
+        if self._episode == 0:
+            self._worst_dmap = torch.zeros_like(dmap)
+
+        mask = dmap > self._worst_dmap
+        self._worst_dmap[mask] = dmap[mask]
+
+        return_dmap = dmap.clone()
+        mask = dmap < 0.9 * self._worst_dmap
+        return_dmap[mask] = self._worst_dmap[mask]
+
+        return return_dmap
 
 
     def _update_state_batch(self, layer_i, state_batch, sparsb_prev, dmapb_prev):
