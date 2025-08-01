@@ -17,7 +17,7 @@ from pruning.model_pruner.stepwise_pruner import StepWisePruner
 from pruning.channel_selection.channel_selector import ChannelSelector
 from state_predictor.coder import Coder
 from reinforcement_learning.model import actorNet, criticNet
-from reinforcement_learning.losses import ActorLoss, CriticLoss
+from reinforcement_learning.losses import ActorLoss, CriticLoss, ActorPPOLoss
 from reinforcement_learning.rewards import reward_function_proposed, reward_function_purl, reward_function_amc
 
 
@@ -172,7 +172,8 @@ class RLAgentHandler():
                                               lr = self._conf.model.actor_init_lr,
                                               weight_decay = self._conf.model.actor_weight_decay                                                                       
                                             )  
-        self._actor_loss = ActorLoss()
+        
+        self._actor_loss = ActorPPOLoss() if self._conf.model.is_ppo else ActorLoss()
 
         self._critic_model = criticNet(state_feature_dim, 1).to(self._device)
         self._critic_optimizer = get_optimizer(type = self._conf.model.critic_optimizer,
@@ -272,13 +273,17 @@ class RLAgentHandler():
             # === 7. Prepare Log Probs ===
             if self._episode == 0 or self._conf.model.pretrained:  
                 log_probs_prev = torch.zeros(torch.stack(log_probs).shape)
-            else:            
-                log_probs_prev = log_probs_prev.detach()
+
 
             # === 8. Compute Losses ===
             critic_loss = self._critic_loss(rewards, values, 0.99)
-            actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._entropy_values[self._episode], gamma=0.99)
-    
+            if self._conf.model.is_ppo:
+                actor_loss = self._actor_loss(rewards, values, policies, torch.stack(log_probs), log_probs_prev.to(self._device), entropies, ent_coef = self._entropy_values[self._episode], gamma=0.99)
+            else:
+                actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._entropy_values[self._episode], gamma=0.99)
+
+            log_probs_prev = torch.stack(log_probs).detach()
+
             # === 9. Backpropagation ===
             self._actor_optimizer.zero_grad()
             self._critic_optimizer.zero_grad()

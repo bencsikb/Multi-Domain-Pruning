@@ -27,8 +27,8 @@ def get_discounted_reward(
         disc_rewards.insert(0, val)
 
     disc_rewards = torch.stack(disc_rewards)
-    out = (disc_rewards - disc_rewards.mean()) / (disc_rewards.std() + 1e-8)
-    return out
+    #out = (disc_rewards - disc_rewards.mean()) / (disc_rewards.std() + 1e-8)
+    return disc_rewards
 
 
 
@@ -50,7 +50,11 @@ def get_advantage(
     """
     disc_rewards = get_discounted_reward(rewards, values, gamma)
     advantage = disc_rewards - torch.stack(values)
-    return advantage # TODO? (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+
+    # Normalize advantage
+    advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+
+    return advantage 
 
 
 class CriticLoss(nn.Module):

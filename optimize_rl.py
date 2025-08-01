@@ -10,12 +10,12 @@ from utils.common_utils import generate_run_name
 
 def objective(trial, config, obj_metric):
     # Suggest hyperparameters
-    episodes = trial.suggest_int('episodes', 500, 1500, step=100)
+    episodes = trial.suggest_int('episodes', 500, 1000, step=100)
     batch_size = trial.suggest_categorical('batch_size', [1024, 2048])
 
     optimizer_type = trial.suggest_categorical('optimizer', ['adam']) #, 'lamb'])
     start_lr = trial.suggest_categorical(
-        'start_lr', [c * 10**-e for e in range(2,4) for c in range(1, 10)]
+        'start_lr', [c * 10**-e for e in range(2,5) for c in range(1, 10)]
     )
     weight_decay = trial.suggest_categorical(
         'weight_decay', [c * 10**-e for e in range(2, 6) for c in range(1, 10)]
