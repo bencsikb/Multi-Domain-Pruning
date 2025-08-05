@@ -138,12 +138,13 @@ class RLAgentHandler():
             'lr_scheduler': self._lr_scheduler.state_dict(),
             'entropy_values': self._entropy_values
         }
-        torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint.pt"))
-
+        torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint_last.pt"))
+        if int(self._best_results_df["reward"].idxmax()) == self._episode:
+            torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint_best.pt"))
     
 
     def _load_checkpoint(self, path):
-        checkpoint_path = os.path.join(path, "checkpoint.pt")
+        checkpoint_path = os.path.join(path, "checkpoint_best.pt")
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
         self._actor_model.load_state_dict(checkpoint['actor_state_dict'])
@@ -245,7 +246,7 @@ class RLAgentHandler():
                 prediction = self._spn_handler.predict(spn_input_data)
                 sparsb, dmapb = prediction[0], prediction[1]
 
-                dmap = self._double_check_dmap(dmapb)
+                dmapb = self._double_check_dmap(dmapb)
 
                 # Update state batc
                 state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
@@ -353,14 +354,15 @@ class RLAgentHandler():
         Ensure dmap is not significantly lower than the worst seen so far.
         If any value in dmap is less than 90% of the worst_dmap, it is replaced with the worst_dmap value.
         """
-        if self._episode == 0:
-            self._worst_dmap = torch.zeros_like(dmap)
+        if self._episode == 0 or self._conf.model.pretrained:
+            self._worst_dmap = torch.full(dmap.size(), -1, dtype=dmap.dtype, device=dmap.device)
 
         mask = dmap > self._worst_dmap
         self._worst_dmap[mask] = dmap[mask]
 
         return_dmap = dmap.clone()
-        mask = dmap < 0.9 * self._worst_dmap
+        mask = ((self._worst_dmap > 0) & (dmap < 0.9 * self._worst_dmap)) | \
+            ((self._worst_dmap < 0) & (dmap > 0.9 * self._worst_dmap))
         return_dmap[mask] = self._worst_dmap[mask]
 
         return return_dmap
