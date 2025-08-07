@@ -15,7 +15,7 @@ from ultralytics.nn.modules import Detect
 from src.model.tp_utils import replace_c2f_with_c2f_v2
 
 
-class ModelHandler:
+class YoloHandler:
     def __init__(self, model_conf) -> None:
 
         # self._flattened_layers = []

@@ -2,19 +2,20 @@ import os
 import torch
 import torch.nn as nn
 from tqdm import tqdm
-from typing import Tuple        
-from torch.optim import Optimizer
+from typing import Tuple , List 
+from types import SimpleNamespace
 from torch.utils.data import DataLoader
+
 from utils.tensorboard_handler import TensorboardHandler
 
 from state_predictor.model import SPN, SPNMultihead
-from state_predictor.utils import calculate_metrics, denormalize
+from state_predictor.metrics import calculate_metrics
 from utils.losses import LogCoshLoss
-from utils.common_utils import set_seed
+from utils.common_utils import set_seed, denormalize
 
 
 class SPNHandler:
-    def __init__(self, conf, run_name: str, tb_handler: TensorboardHandler) -> None:
+    def __init__(self, conf: SimpleNamespace, run_name: str, tb_handler: TensorboardHandler = None) -> None:
 
         self._conf = conf
         self._run_name = run_name
@@ -24,30 +25,38 @@ class SPNHandler:
         self._device = self._conf.train.device
 
         self._label_keys = {"spars": 0, "dmap": 1} 
+        self._state_features = self._model_conf.state_features
 
         self._model = None
         set_seed(self._conf.train.seed)
                 
     
-    def create(self) -> None:
+    def create(self, is_pretrained: bool = False) -> None:
 
-        input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
+        from src.training_components import get_loss_function, get_optimizer, get_lr_scheduler
+
+        input_size = self._model_conf.n_prunable_layers * len(self._state_features)
         if self._model_conf.multihead:
             self._model = SPNMultihead(input_size)
         else:
             self._model = SPN(input_size, self._model_conf.output_size)
         self._model.to(self._device)
-
-        self._freeze_model_parts_if_specified()
-
-        self._optimizer = self._get_optimizer()
-        self._loss_func = self._get_loss_function()
-        self._lr_scheduler = self._get_lr_scheduler()  
+        
+        self._optimizer = get_optimizer(type = self._model_conf.optimizer,
+                                        model = self._model,
+                                        lr = self._model_conf.start_lr,
+                                        weight_decay = self._model_conf.weight_decay,
+                                        momentum=self._model_conf.momentum if self._model_conf.optimizer=="sgd" else None)
+        self._loss_func = get_loss_function(type=self._model_conf.loss)
+        self._lr_scheduler = get_lr_scheduler(type = self._model_conf.lr_scheduler,
+                                              epochs = self._conf.train.epochs,
+                                               optimizer = self._optimizer)  
 
         self._loss_func.to(self._device)
 
-        if len(self._model_conf.pretrained):
-            self.load_checkpoint(self._model_conf.pretrained)
+        if len(self._model_conf.pretrained) or is_pretrained:
+            log_path = self._log_dir_path if is_pretrained else self._model_conf.pretrained 
+            self.load_checkpoint(log_path)
         
     
     def _freeze_model_parts_if_specified(self):
@@ -89,55 +98,11 @@ class SPNHandler:
             self._epoch = checkpoint.get('epoch', 0)
             self._loss_func = checkpoint.get('loss', self._loss_func)
 
-
-    def _get_loss_function(self) : #TODO ret type
-        
-        if self._model_conf.loss == "logcosh":
-            loss_func = LogCoshLoss()
-        elif self._model_conf.loss == "mse":
-            loss_func = nn.MSELoss()
-        elif self._model_conf.loss == "l1":
-            loss_func = nn.L1Loss()
-        
-        return loss_func
-    
-    def _get_optimizer(self) -> Optimizer:
-        trainable_params = filter(lambda p: p.requires_grad, self._model.parameters())
-
-        if self._model_conf.optimizer == "adam":
-            optimizer = torch.optim.Adam(trainable_params, 
-                                        lr=self._model_conf.start_lr,
-                                        weight_decay=self._model_conf.weight_decay)
-        elif self._model_conf.optimizer == "sgd":
-            optimizer = torch.optim.SGD(trainable_params,
-                                        lr=self._model_conf.start_lr,
-                                        momentum=self._model_conf.momentum,
-                                        weight_decay=self._model_conf.weight_decay)
-        elif self._model_conf.optimizer == "adamw":
-            optimizer = torch.optim.AdamW(trainable_params,
-                                        lr=self._model_conf.start_lr,
-                                        weight_decay=self._model_conf.weight_decay)
-        else:
-            raise ValueError(f"Unsupported optimizer: {self._model_conf.optimizer}")
-
-        return optimizer
-
-
-
-    def _get_lr_scheduler(self):
-        
-        if self._model_conf.lr_scheduler == "cos":
-            lr_sched = torch.optim.lr_scheduler.CosineAnnealingLR(self._optimizer,
-                                                                  T_max=self._conf.train.epochs,
-                                                                  eta_min=0.000005,
-                                                                  last_epoch=-1)
-
-        return lr_sched
-
+ 
     
     def train(self, train_dataloader: DataLoader, val_dataloader: DataLoader):
         epochs = self._conf.train.epochs
-        epoch = 0
+        epoch = 0 # TODO
 
         while epoch < epochs:
             self._model.train()
@@ -229,11 +194,11 @@ class SPNHandler:
         with torch.no_grad():
             outs = self._model(data_gt)   
 
-        outs = outs.squeeze()
-        pred_spars =  denormalize(outs[0], value_range=(0, 1))
-        pred_dmap = denormalize(outs[1], value_range=(0, 1))
+        # outs = outs.squeeze()
+        # pred_spars =  denormalize(outs[0], value_range=(0, 1))
+        # pred_dmap = denormalize(outs[1], value_range=(0, 1))
         
-        return pred_spars, pred_dmap        
+        return outs[:,0], outs[:,1] #pred_spars, pred_dmap        
 
     
     
@@ -285,7 +250,10 @@ class SPNHandler:
     @property
     def device(self) -> str:
         return self._device
-
+    
+    @property 
+    def state_features(self) -> List[str]:
+        return self._state_features
 
 
 

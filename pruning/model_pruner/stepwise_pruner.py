@@ -3,7 +3,7 @@ import numpy as np
 import logging
 from typing import List
 
-from src.model.model_handler import ModelHandler
+from src.model.yolo_handler import YoloHandler
 from src.sample_handler import SampleHandler
 from pruning.channel_selection.channel_selector import ChannelSelector
 from types import SimpleNamespace
@@ -11,10 +11,11 @@ from types import SimpleNamespace
 
 class StepWisePruner():
     def __init__(self, 
-                 model_handler: ModelHandler, 
+                 model_handler: YoloHandler, 
                  sample_handler: SampleHandler,
                  conf: SimpleNamespace, 
-                 channel_selector: ChannelSelector) -> None:
+                 channel_selector: ChannelSelector,
+                 is_rl: bool = False) -> None:
                 
         self._model_handler = model_handler
         self._sample_handler = sample_handler
@@ -28,7 +29,8 @@ class StepWisePruner():
         self._init_metrics = pd.DataFrame(0.0, index=range(1), columns=self.metrics_features)
         self._metrics = pd.DataFrame(0.0, index=range(1), columns=self.metrics_features)
 
-        self._set_init_metrics()
+        if not is_rl:
+            self._set_init_metrics()
 
         self._layer_i = -1
         self.reset_model_and_state()
