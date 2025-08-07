@@ -252,7 +252,7 @@ class RLAgentHandler():
                 state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
 
                 # Decode predictions
-                decoded_prediction = self._coder.decode_label(prediction) # Tuple([batch_size], [batch_size])
+                decoded_prediction = self._coder.decode_label((sparsb, dmapb)) # Tuple([batch_size], [batch_size])
                 decoded_sparsb, decoded_dmapb = decoded_prediction['spars'], decoded_prediction['dmap']
 
                 # --- 3h. Compute Reward ---
@@ -355,7 +355,8 @@ class RLAgentHandler():
         If any value in dmap is less than 90% of the worst_dmap, it is replaced with the worst_dmap value.
         """
         if self._episode == 0 or self._conf.model.pretrained:
-            self._worst_dmap = torch.full(dmap.size(), -1, dtype=dmap.dtype, device=dmap.device)
+            #self._worst_dmap = torch.full(dmap.size(), -1, dtype=dmap.dtype, device=dmap.device)
+            self._worst_dmap = dmap.clone()
 
         mask = dmap > self._worst_dmap
         self._worst_dmap[mask] = dmap[mask]
