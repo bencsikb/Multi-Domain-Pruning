@@ -247,16 +247,17 @@ class SPNHandler:
         self._model.eval()
 
         # Add batch dimension: (1, T, 3)
-        data_gt = data_gt.unsqueeze(0).type(torch.float32).to(self._device)
+        if len(data_gt.shape) == 2:
+            data_gt = data_gt.unsqueeze(0).type(torch.float32).to(self._device)
 
         with torch.no_grad():
             outs = self._model(data_gt)  # (1, T, 2)
             
-        print(outs)
-        last_pred = outs[0, -1]  # shape: (2,)
+        #print(outs)
+        last_pred = outs[:, -1, :]  # shape: (2,)
 
-        pred_spars = denormalize(last_pred[0], value_range=(0, 1))
-        pred_dmap = denormalize(last_pred[1], value_range=(0, 1))
+        pred_spars = denormalize(last_pred[:, 0], value_range=(0, 1))
+        pred_dmap = denormalize(last_pred[:, 1], value_range=(0, 1))
 
         return pred_spars, pred_dmap
 
