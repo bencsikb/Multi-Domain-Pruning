@@ -29,7 +29,7 @@ class SPNHandler:
         set_seed(self._conf.train.seed)
                 
     
-    def create(self) -> None:
+    def create(self, is_pretrained = False) -> None:
 
         input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
 
@@ -60,8 +60,9 @@ class SPNHandler:
 
         self._loss_func.to(self._device)
 
-        if len(self._model_conf.pretrained):
-            self.load_checkpoint(self._model_conf.pretrained)
+        if len(self._model_conf.pretrained) or is_pretrained:
+            log_path = self._log_dir_path if is_pretrained else self._model_conf.pretrained 
+            self.load_checkpoint(log_path)        
         
     
     def _freeze_model_parts_if_specified(self):
@@ -170,8 +171,8 @@ class SPNHandler:
                 self._optimizer.zero_grad()
                 outs = self._model(data_gt)
 
-                spars_loss = self._loss_func(outs[:,0], label_gt[:,0])
-                dmap_loss = self._loss_func(outs[:,1], label_gt[:,1])
+                spars_loss = self._loss_func(outs[:,:,0], label_gt[:,:,0])
+                dmap_loss = self._loss_func(outs[:,:,1], label_gt[:,:,1])
                 loss = spars_loss + dmap_loss
                 weighted_loss = self._conf.model.spars_loss_weight * spars_loss + self._conf.model.dmap_loss_weight * dmap_loss
 
@@ -218,8 +219,8 @@ class SPNHandler:
 
             with torch.no_grad():
                 outs = self._model(data_gt)
-                spars_loss = self._loss_func(outs[:,0], label_gt[:,0])
-                dmap_loss = self._loss_func(outs[:,1], label_gt[:,1])
+                spars_loss = self._loss_func(outs[:,:,0], label_gt[:,:,0])
+                dmap_loss = self._loss_func(outs[:,:,1], label_gt[:,:,1])
                 loss = spars_loss + dmap_loss
 
             running_loss += loss.cpu().item()
@@ -236,18 +237,63 @@ class SPNHandler:
     
     
     def predict(self, data_gt: torch.Tensor) -> Tuple:
-
+        """
+        Args:
+            data_gt: shape (T, 3) — a single input sequence with [spars, dmap, alpha]
+        
+        Returns:
+            pred_spars, pred_dmap: denormalized prediction for the next step (spars_T, dmap_T)
+        """
         self._model.eval()
 
-        data_gt = data_gt.type(torch.float32).to(self._device)
-        with torch.no_grad():
-            outs = self._model(data_gt)   
+        # Add batch dimension: (1, T, 3)
+        data_gt = data_gt.unsqueeze(0).type(torch.float32).to(self._device)
 
-        outs = outs.squeeze()
-        pred_spars =  denormalize(outs[0], value_range=(0, 1))
-        pred_dmap = denormalize(outs[1], value_range=(0, 1))
-        
-        return pred_spars, pred_dmap        
+        with torch.no_grad():
+            outs = self._model(data_gt)  # (1, T, 2)
+            
+        print(outs)
+        last_pred = outs[0, -1]  # shape: (2,)
+
+        pred_spars = denormalize(last_pred[0], value_range=(0, 1))
+        pred_dmap = denormalize(last_pred[1], value_range=(0, 1))
+
+        return pred_spars, pred_dmap
+
+    def autoregressive_predict(self, alpha_seq, init_spars, init_dmap):
+        """
+        Predicts next values autoregressively using Transformer SPN.
+        Args:
+            alpha_seq: Tensor of shape (T,) → alphas for each step
+            init_spars, init_dmap: float values for the first input
+        Returns:
+            Tensor of shape (T, 2) → predicted [spars, dmap] at each step
+        """
+        self._model.eval()
+
+        device = self._device
+        preds = []
+        history = []
+
+        # Initial input
+        spars, dmap = init_spars, init_dmap
+
+        for alpha in alpha_seq:
+            x = torch.tensor([alpha.item(), spars, dmap], dtype=torch.float32).to(device)
+            history.append(x)
+
+            input_seq = torch.stack(history).unsqueeze(0)  # shape (1, T_so_far, 3)
+
+            with torch.no_grad():
+                out = self._model(input_seq)  # (1, T_so_far, 2)
+                next_vals = out[0, -1].cpu()  # (2,)
+
+            preds.append(next_vals)
+            spars, dmap = next_vals.tolist()
+
+        return torch.stack(preds)  # (T, 2)
+
+   
 
     
     
