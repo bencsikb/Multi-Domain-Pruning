@@ -68,7 +68,7 @@ class RLAgentHandler():
 
         run_path = self._conf.spn.root        
         run_name = os.path.basename(run_path)      
-        spn_handler = SPNHandler(self._spn_conf, run_name=run_name)
+        spn_handler = SPNHandler(self._spn_conf, run_name=run_name, tb_handler=None)
         spn_handler.create(is_pretrained=True)
         return spn_handler
     
@@ -243,10 +243,10 @@ class RLAgentHandler():
                 # --- 3g. Predict Error & Sparsity --     
                 #    spn_input_data shape = [batch_size, n_features * n_prunable_layers]          
                 spn_input_data = torch.cat((action_batch, state_batch), dim=1).view([self._conf.train.batch_size, -1]) # .type(torch.float32).to(device)
-                prediction = self._spn_handler.predict(spn_input_data)
-                sparsb, dmapb = prediction[0], prediction[1]
+                spn_input_data = spn_input_data.reshape([spn_input_data.shape[0], len(self._state_features), -1]).T.permute(2,0,1)
 
-                dmapb = self._double_check_dmap(dmapb)
+                prediction = self._spn_handler.predict(spn_input_data[:, :layer_i+1, :])
+                sparsb, dmapb = prediction[0], prediction[1]
 
                 # Update state batc
                 state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
@@ -343,9 +343,9 @@ class RLAgentHandler():
     def _init_environment(self):
 
         action_batch = torch.full([self._conf.train.batch_size, 1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
-        state_batch = torch.full([self._conf.train.batch_size, len(self._state_features)-1, self._yolo_handler.n_prunable_layers], 1.0).to(self._device)
-        sparsb_prev = torch.full([self._conf.train.batch_size], 1.0).to(self._device)
-        dmapb_prev = torch.full([self._conf.train.batch_size], 1.0).to(self._device)
+        state_batch = torch.full([self._conf.train.batch_size, len(self._state_features)-1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
+        sparsb_prev = torch.full([self._conf.train.batch_size], -1.0).to(self._device)
+        dmapb_prev = torch.full([self._conf.train.batch_size], -1.0).to(self._device)
 
         return action_batch, state_batch, sparsb_prev, dmapb_prev
     
