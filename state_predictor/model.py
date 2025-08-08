@@ -65,3 +65,26 @@ class SPNMultihead(nn.Module):
         # return shape: (batch, 2)
         return torch.cat([out_spars, out_dmap], dim=1)
 
+class SPNTransformer(nn.Module):
+    
+    def __init__(self, input_dim=3, model_dim=64, num_heads=4, num_layers=2, dropout=0.1, max_len=100):
+        super().__init__()
+        self.model_dim = model_dim
+        self.input_proj = nn.Linear(input_dim, model_dim)
+        self.pos_embedding = nn.Parameter(torch.randn(1, max_len, model_dim))  # learned positional encoding
+
+        encoder_layer = nn.TransformerEncoderLayer(d_model=model_dim, nhead=num_heads, dropout=dropout, batch_first=True)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        self.output_proj = nn.Linear(model_dim, 2)  # predicts [spars_next, dmap_next]
+
+    def forward(self, x):
+        """
+        x: Tensor of shape (batch_size, seq_len, 3) → [spars, dmap, alpha]
+        """
+        seq_len = x.size(1)
+        x = self.input_proj(x)  # (B, T, model_dim)
+        x = x + self.pos_embedding[:, :seq_len, :]  # Add positional encoding
+        x = self.transformer(x)  # (B, T, model_dim)
+        out = self.output_proj(x)  # (B, T, 2)
+        return out

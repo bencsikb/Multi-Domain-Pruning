@@ -19,10 +19,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--fantasy_name', type=str) 
     parser.add_argument('--device', default='')
+    parser.add_argument('--conf', default="config/spn_transformer.ini")
     args = parser.parse_args()
 
     # Read and save config file
-    conf = ConfigParser.read("config/spn.ini")
+    conf = ConfigParser.read(args.conf)
 
     # Create logging directory
     run_name = generate_run_name(args.fantasy_name)
