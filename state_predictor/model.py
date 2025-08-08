@@ -80,11 +80,21 @@ class SPNTransformer(nn.Module):
 
     def forward(self, x):
         """
-        x: Tensor of shape (batch_size, seq_len, 3) → [spars, dmap, alpha]
+        x: Tensor of shape (batch_size, seq_len, 3) → [alpha, spars, dmap]
         """
-        seq_len = x.size(1)
-        x = self.input_proj(x)  # (B, T, model_dim)
-        x = x + self.pos_embedding[:, :seq_len, :]  # Add positional encoding
-        x = self.transformer(x)  # (B, T, model_dim)
+        B, T, _ = x.shape
+        x = self.input_proj(x) + self.pos_embedding[:, :T, :]  # (B, T, model_dim)
+
+        # Causal mask: prevents attention to future tokens
+        causal_mask = torch.triu(torch.ones(T, T, device=x.device), diagonal=1).bool()
+
+        # Transformer expects src shape (B, T, D) with `mask` shape (T, T)
+        x = self.transformer(x, mask=causal_mask)  # (B, T, model_dim)
+
         out = self.output_proj(x)  # (B, T, 2)
         return out
+
+
+    def generate_causal_mask(self, size: int, device):
+        mask = torch.triu(torch.ones(size, size), diagonal=1).bool()
+        return mask.to(device)
