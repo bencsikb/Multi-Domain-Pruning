@@ -34,11 +34,12 @@ class SPNHandler:
         input_size = self._model_conf.n_prunable_layers * len(self._model_conf.state_features)
 
         # Select model type
-        if self._model_conf.type == "basic":
+        model_type = getattr(self._model_conf, "type", "multihead")
+        if model_type == "basic":
             self._model = SPN(input_size, self._model_conf.output_size)
-        elif self._model_conf.type == "multihead":
+        elif model_type == "multihead":
             self._model = SPNMultihead(input_size)
-        elif self._model_conf.type == "transformer":
+        elif model_type == "transformer":
             self._model = SPNTransformer(
                 input_dim=3, 
                 model_dim=self._model_conf.model_dim, 
@@ -256,8 +257,8 @@ class SPNHandler:
         #print(outs)
         last_pred = outs[:, -1, :]  # shape: (2,)
 
-        pred_spars = denormalize(last_pred[:, 0], value_range=(0, 1))
-        pred_dmap = denormalize(last_pred[:, 1], value_range=(0, 1))
+        pred_spars = last_pred[:,0] #denormalize(last_pred[:, 0], value_range=(0, 1))
+        pred_dmap = last_pred[:, 1] # denormalize(last_pred[:, 1], value_range=(0, 1))
 
         return pred_spars, pred_dmap
 
