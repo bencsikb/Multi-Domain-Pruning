@@ -215,6 +215,7 @@ class RLAgentHandler():
             policies = []
             log_probs = []
             entropies = []
+            policy_masks = []
             
             # === 3. Iterate Over Layers ===
             for layer_i, layer in enumerate(self._yolo_handler.prunable_layers):
@@ -225,12 +226,21 @@ class RLAgentHandler():
                 q_value = self._critic_model(state_batch_flattened)
 
                 # --- 3d. Sample Action & Compute Info ---
-                action = action_dist.sample()  # alpha index                
-
+                skipmod = getattr(self._conf.train, "skipmod", -1)
+                skip_flag = (skipmod > 0) and (layer_i % skipmod != 0)
+                    
+                sampled_action = action_dist.sample()  # alpha index
                 # entropy = action_dist.entropy()
-                log_prob = action_dist.log_prob(action).unsqueeze(1)
-                policy = probs.gather(-1, action.unsqueeze(0))
+                log_prob = action_dist.log_prob(sampled_action).unsqueeze(1)
+                policy = probs.gather(-1, sampled_action.unsqueeze(0))
                 entropy = - (probs * log_softmax).sum(1, keepdim=True)
+
+                policy_mask = torch.ones(self._conf.train.batch_size, 1, device=self._device)
+                if skip_flag:
+                    action = torch.zeros(self._conf.train.batch_size, dtype=int).to(self._device)
+                else:
+                    action = sampled_action
+                    policy_mask.zero_()
 
                 with torch.no_grad():
                     for i in range(self._conf.train.batch_size):
@@ -246,7 +256,7 @@ class RLAgentHandler():
                 prediction = self._spn_handler.predict(spn_input_data)
                 sparsb, dmapb = prediction[0], prediction[1]
 
-                dmapb = self._double_check_dmap(dmapb)
+                # dmapb = self._double_check_dmap(dmapb)
 
                 # Update state batc
                 state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
@@ -266,7 +276,8 @@ class RLAgentHandler():
                 states.append(state_batch.clone().detach())                
                 rewards.append(reward) 
                 values.append(q_value)  
-                policies.append(policy)  
+                policies.append(policy) 
+                policy_masks.append(policy_mask) 
                
             # === 6. Compute Returns ===
             #returns = self._get_discounted_reward(reward, values, gamma=0.99)
@@ -279,9 +290,9 @@ class RLAgentHandler():
             # === 8. Compute Losses ===
             critic_loss = self._critic_loss(rewards, values, 0.99)
             if self._conf.model.is_ppo:
-                actor_loss = self._actor_loss(rewards, values, policies, torch.stack(log_probs), log_probs_prev.to(self._device), entropies, ent_coef = self._entropy_values[self._episode], gamma=0.99)
+                actor_loss = self._actor_loss(rewards, values, policies, torch.stack(log_probs), log_probs_prev.to(self._device), entropies, policy_masks, ent_coef = self._entropy_values[self._episode], gamma=0.99)
             else:
-                actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._entropy_values[self._episode], gamma=0.99)
+                actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, policy_masks, ent_coef = self._entropy_values[self._episode], gamma=0.99)
 
             log_probs_prev = torch.stack(log_probs).detach()
 
