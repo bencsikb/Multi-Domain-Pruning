@@ -98,6 +98,7 @@ class ActorLoss(nn.Module):
         policies: torch.Tensor,
         log_probs: List[torch.Tensor],
         entropies: Optional[List[torch.Tensor]] = None,
+        policy_masks: Optional[List[torch.Tensor]] = None,
         ent_coef: float = 0.5,
         gamma: float = 0.99
     ) -> torch.Tensor:
@@ -119,9 +120,9 @@ class ActorLoss(nn.Module):
         if entropies is not None and len(entropies) > 0:
             entropy_tensor = torch.stack(entropies)
             ent = ent_coef * entropy_tensor.mean()
-            loss = - (torch.stack(log_probs) * advantage + ent).mean()
+            loss = - (torch.stack(policy_masks) * torch.stack(log_probs) * advantage + ent).mean()
         else:
-            loss = - (torch.stack(log_probs) * advantage).mean()
+            loss = - (torch.stack(policy_masks) * torch.stack(log_probs) * advantage).mean()
 
 
         return loss
@@ -142,6 +143,7 @@ class ActorPPOLoss(nn.Module):
         log_probs: torch.Tensor,
         log_probs_prev: torch.Tensor,
         entropies: Optional[List[torch.Tensor]] = None,
+        policy_masks: Optional[List[torch.Tensor]] = None,
         ent_coef: float = 0.5,
         gamma: float = 0.99,
         eps: float = 0.2
@@ -171,8 +173,8 @@ class ActorPPOLoss(nn.Module):
 
         if entropies:
             ent = ent_coef * torch.mean(torch.stack(entropies))
-            loss = - (surrogate + ent).mean()
+            loss = - (torch.stack(policy_masks) * surrogate + ent).mean()
         else:
-            loss = - surrogate.mean()
+            loss = - (torch.stack(policy_masks) * surrogate).mean()
 
         return loss
