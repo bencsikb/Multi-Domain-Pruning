@@ -219,7 +219,7 @@ class RLAgentHandler():
             
             # === 3. Iterate Over Layers ===
             for layer_i, layer in enumerate(self._yolo_handler.prunable_layers):
-
+                
                 # --- 3c. Actorm, Critic Forward ---  
                 state_batch_flattened = state_batch.view([self._conf.train.batch_size, -1])
                 probs, action_dist, log_softmax = self._actor_model(state_batch_flattened)
