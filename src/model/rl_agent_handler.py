@@ -386,8 +386,8 @@ class RLAgentHandler():
 
         with torch.no_grad():
             state_batch = state_batch.clone()
-            state_batch[:, 0, layer_i] = sparsb_prev
-            state_batch[:, 1, layer_i] = dmapb_prev
+            state_batch[:, 0, layer_i+1] = sparsb_prev
+            state_batch[:, 1, layer_i+1] = dmapb_prev
 
         return state_batch
     
