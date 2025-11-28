@@ -259,7 +259,8 @@ class RLAgentHandler():
                 sparsb, dmapb = prediction[0], prediction[1]
 
                 # Update state batc
-                state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
+                if layer_i < self._yolo_handler.n_prunable_layers-1:
+                    state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
 
                 # Decode predictions
                 decoded_prediction = self._coder.decode_label((sparsb, dmapb)) # Tuple([batch_size], [batch_size])

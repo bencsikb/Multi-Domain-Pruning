@@ -261,12 +261,14 @@ class SPNHandler:
         pred_dmap = last_pred[:, 1] # denormalize(last_pred[:, 1], value_range=(0, 1))
 
         return pred_spars, pred_dmap
+    
 
-    def autoregressive_predict(self, alpha_seq):
+    def autoregressive_predict(self, alpha_seq, init_spars=-1.0, init_dmap=-1.0):
         """
         Predicts next values autoregressively using Transformer SPN.
         Args:
             alpha_seq: Tensor of shape (T,) → alphas for each step
+            init_spars, init_dmap: float values for the first input
         Returns:
             Tensor of shape (T, 2) → predicted [spars, dmap] at each step
         """
@@ -276,8 +278,10 @@ class SPNHandler:
         preds = []
         history = []
 
+        spars, dmap = init_spars, init_dmap
+
         for alpha in alpha_seq:
-            x = torch.tensor([alpha.item(), -1.0, -1.0], dtype=torch.float32).to(device)
+            x = torch.tensor([alpha.item(), spars, dmap], dtype=torch.float32).to(device)
             history.append(x)
 
             input_seq = torch.stack(history).unsqueeze(0)  # shape (1, T_so_far, 3)
@@ -287,13 +291,10 @@ class SPNHandler:
                 next_vals = out[0, -1].cpu()  # (2,)
 
             preds.append(next_vals)
-            history[-1][1:] = next_vals
+            spars, dmap = next_vals.tolist()
 
         return torch.stack(preds)  # (T, 2)
-
    
-
-    
     
     def _calculate_metrics(self, outs, label_gt, running_metrics):
         for key, idx in self._label_keys.items():
