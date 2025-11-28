@@ -18,7 +18,7 @@ from pruning.channel_selection.channel_selector import ChannelSelector
 from state_predictor.coder import Coder
 from reinforcement_learning.model import actorNet, criticNet
 from reinforcement_learning.losses import ActorLoss, CriticLoss, ActorPPOLoss
-from reinforcement_learning.rewards import reward_function_proposed, reward_function_purl, reward_function_amc
+from reinforcement_learning.rewards import reward_function_proposed, reward_function_purl, reward_function_amc, PartialTargetReward, SigmoidGateReward
 
 
 class RLAgentHandler():
@@ -138,13 +138,13 @@ class RLAgentHandler():
             'lr_scheduler': self._lr_scheduler.state_dict(),
             'entropy_values': self._entropy_values
         }
-        torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint_last.pt"))
+        torch.save(checkpoint, os.path.join(self._log_dir_path, f"checkpoint_{self._episode}.pt"))
         if int(self._best_results_df["reward"].idxmax()) == self._episode:
             torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint_best.pt"))
     
 
     def _load_checkpoint(self, path):
-        checkpoint_path = os.path.join(path, "checkpoint_best.pt")
+        checkpoint_path = path #os.path.join(path, "checkpoint_best.pt")
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
         self._actor_model.load_state_dict(checkpoint['actor_state_dict'])
@@ -192,6 +192,27 @@ class RLAgentHandler():
                                                 max_val = self._conf.model.entropy_factor * self._conf.model.actor_entropy_coef,
                                                 epochs = self._conf.train.episodes,
                                                 direction="up")
+        
+        # Init reward class if needed
+        if self._conf.reward.type == 'partial_target':
+            self.reward_class = PartialTargetReward( 
+                                            self._yolo_handler.prunable_layers,
+                                            self._conf.reward.target_spars,
+                                            self._conf.reward.target_dmap,
+                                            self._conf.reward.beta,
+                                            self._conf.reward.spars_coeff,
+                                            self._conf.reward.dmap_coeff,
+                                            self._device)
+            
+        elif self._conf.reward.type == 'sigmoid_gate':
+            self.reward_class = SigmoidGateReward( 
+                                self._yolo_handler.prunable_layers,
+                                self._conf.reward.target_spars,
+                                self._conf.reward.target_dmap,
+                                self._conf.reward.beta,
+                                self._conf.reward.spars_coeff,
+                                self._conf.reward.dmap_coeff,
+                                self._device)
 
         self._episode = 0
 
@@ -267,7 +288,7 @@ class RLAgentHandler():
                 decoded_sparsb, decoded_dmapb = decoded_prediction['spars'], decoded_prediction['dmap']
 
                 # --- 3h. Compute Reward ---
-                reward = self._get_reward(self._conf.reward.type, decoded_sparsb, decoded_dmapb) # [batch_size, 1]
+                reward = self._get_reward(self._conf.reward.type, layer_i, decoded_sparsb, decoded_dmapb) # [batch_size, 1]
 
                 # --- 3i. Save Trajectory Step ---
 
@@ -326,7 +347,7 @@ class RLAgentHandler():
 
 
 
-    def _get_reward(self, reward_type, decoded_sparsb, decoded_dmapb):
+    def _get_reward(self, reward_type, layer_i, decoded_sparsb, decoded_dmapb):
 
         if reward_type == 'proposed':
             reward = reward_function_proposed(decoded_sparsb,
@@ -348,6 +369,9 @@ class RLAgentHandler():
             reward = reward_function_amc(decoded_sparsb,
                                          decoded_dmapb)
                                          # init_params TODO
+            
+        elif reward_type == 'partial_target' or reward_type == 'sigmoid_gate':
+            reward = self.reward_class.get_reward(layer_i, decoded_sparsb, decoded_dmapb)
 
         return reward.unsqueeze(1)
         
@@ -405,14 +429,14 @@ class RLAgentHandler():
         best_idx = states[-1][:, 1, -1].argmin() # best dmap index
         best_results = self._coder.decode_label(states[-1][best_idx, :, -1]) # Tuple (spard, dmap)
         best_alpha_seq = actions[-1][best_idx, 0, :]
-        self._best_results_df.loc[self._episode] = [float(rewards[-1][best_idx, 0].cpu()),
+        self._best_results_df.loc[self._episode] = [float(sum(r[best_idx, 0] for r in rewards).cpu()), 
                                                     float(best_results['spars']), 
                                                     float(best_results['dmap']), 
                                                     best_alpha_seq.tolist()]
 
         del self._results_df
         self._results_df = pd.DataFrame({
-                "reward": rewards[-1][:, 0].cpu().tolist(),
+                "reward": torch.stack([r[:, 0] for r in rewards]).sum(0).cpu().tolist(),
                 "spars":  states[-1][:,0,-1].tolist(),
                 "dmap": states[-1][:,1,-1].tolist(),
                 "alpha_seq": actions[-1][:,0,:].tolist()
@@ -430,7 +454,7 @@ class RLAgentHandler():
         # Log best results: 
         self._tb_handler.log_scalar(actor_loss.item(), self._episode, name="actor_loss", tag_ext="_results")
         self._tb_handler.log_scalar(critic_loss.item(), self._episode, name="critic_loss", tag_ext="_results")
-        self._tb_handler.log_scalar(torch.mean(rewards[-1]).item(), self._episode, name=F"_final_reward", tag_ext="_results")
+        self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'reward'], self._episode, name=F"_final_reward", tag_ext="_results")
         self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'spars'], self._episode, name="best_spars", tag_ext="_results")
         self._tb_handler.log_scalar(self._best_results_df.loc[self._episode, 'dmap'], self._episode, name="best_dmap", tag_ext="_results")
 
