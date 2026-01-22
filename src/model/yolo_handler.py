@@ -9,7 +9,7 @@ from thop import profile
 # from fvcore.nn import FlopCountAnalysis
 import torchvision.transforms as T
 import copy
-from typing import List
+from typing import List, Optional
 
 from ultralytics.nn.modules import Detect
 from ultralytics.utils.loss import v8DetectionLoss 
@@ -134,7 +134,7 @@ class YoloHandler:
             param.requires_grad = True 
 
         self._model.model = copy.deepcopy(self._detmodel)
-
+    
     def fine_tune(
         self,
         data_yaml: str = None,
@@ -186,6 +186,49 @@ class YoloHandler:
 
         results = trainer.train()
         self._model.model = copy.deepcopy(trainer.model)
+
+    
+    def save_pruned_model(self, path: Optional[str] = None) -> str:
+        """
+        Save the current pruned (and possibly fine-tuned) detection model.
+        """
+        if path is None:
+            path = os.path.join("runs", "pruned", "pruned_model.pt")
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        ckpt = {
+            "detmodel": self._detmodel,        # full pruned DetectionModel
+            "nc": getattr(self._detmodel, "nc", None),
+            "names": getattr(self._detmodel, "names", None),
+            "pretrained_type": self._model_conf.pretrained_type,
+        }
+        torch.save(ckpt, path)
+        return path
+
+    def load_pruned_model(self, path: str) -> None:
+        """
+        Load a previously saved pruned detection model from disk
+        and attach it to self._model / self._detmodel.
+        """
+        ckpt = torch.load(path, map_location=self._device)
+
+        detmodel = ckpt["detmodel"].to(self._device).train()
+        # Restore nc/names if present
+        if "nc" in ckpt and ckpt["nc"] is not None:
+            detmodel.nc = ckpt["nc"]
+        if "names" in ckpt and ckpt["names"] is not None:
+            detmodel.names = ckpt["names"]
+
+        self._detmodel = detmodel
+
+        # Rebuild wrapper model around this pruned detmodel
+        # (mirrors what reset_model() does, but without re-pruning)
+        self._model = copy.deepcopy(self._init_model)
+        self._model.model = copy.deepcopy(self._detmodel)
+
+        # Recompute any indices / masks that depend on the current model
+        self.determine_prunable_layers()
 
     def save_metrics():
         pass
