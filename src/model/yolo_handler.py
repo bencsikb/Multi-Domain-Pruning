@@ -1,15 +1,12 @@
-import torch.nn as nn
-import torch_pruning as tp
+import gc
+import os
+import copy
 import torch
 import numpy as np
-import gc
-import sys
-import os
-from thop import profile
-# from fvcore.nn import FlopCountAnalysis
-import torchvision.transforms as T
-import copy
+import torch.nn as nn
+import torch_pruning as tp
 from typing import List, Optional
+# from fvcore.nn import FlopCountAnalysis
 
 from ultralytics.nn.modules import Detect
 from ultralytics.utils.loss import v8DetectionLoss 
@@ -229,6 +226,75 @@ class YoloHandler:
 
         # Recompute any indices / masks that depend on the current model
         self.determine_prunable_layers()
+
+
+    def prune_magnitude(self, importance: str, target_spars: float) -> None:
+
+        self._detmodel.train()
+        device = next(self._detmodel.parameters()).device
+        example_inputs = self._example_input.to(device)
+
+        # ---- Build ignored layers (DO NOT PRUNE DETECT HEAD) ----
+        ignored_layers = []
+
+        detect_modules = []
+        for m in self._detmodel.modules():
+            if isinstance(m, Detect):
+                detect_modules.append(m)
+
+        # 1) Ignore Detect module + all Conv2d inside it
+        for det in detect_modules:
+            ignored_layers.append(det)
+            for sub in det.modules():
+                if isinstance(sub, nn.Conv2d):
+                    ignored_layers.append(sub)
+
+            # 2) Extra safety: ignore all convs that output det.no channels (e.g. 73)
+            # det.no = number of outputs per anchor/location (YOLO-specific)
+            for m in self._detmodel.modules():
+                if isinstance(m, nn.Conv2d) and m.out_channels == det.no:
+                    ignored_layers.append(m)
+
+        # ---- Magnitude importance ----
+        if importance == "magnitude":
+            imp = tp.importance.MagnitudeImportance()
+        elif importance == "hessian":
+            imp = tp.importance.HessianImportance()
+        elif importance == "lamp":
+            imp = tp.importance.LAMPImportance()
+        elif importance == "random":
+            imp = tp.importance.RandomImportance()
+        elif importance == "bn_scale":
+            imp = tp.importance.BNScaleImportance()
+        else:
+            raise ValueError(f"Importance '{importance}' not recognized for magnitude pruning.")
+
+        # Prune in eval mode to avoid any weird training-time branches
+        was_training = self._detmodel.training
+        self._detmodel.eval()
+
+        pruner = tp.pruner.MagnitudePruner(
+            self._detmodel,
+            example_inputs=example_inputs,
+            importance=imp,
+            pruning_ratio=float(target_spars),   
+            global_pruning=True,
+            ignored_layers=ignored_layers,
+        )
+
+        pruner.step()
+
+        # restore train/eval state
+        if was_training:
+            self._detmodel.train()
+
+        # make sure everything is trainable
+        for _, param in self._detmodel.named_parameters():
+            param.requires_grad = True
+
+        # sync back
+        self._model.model = copy.deepcopy(self._detmodel)
+
 
     def save_metrics():
         pass
