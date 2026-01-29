@@ -99,6 +99,7 @@ class YoloHandler:
         metrics = [float(np.around(m,4)) for m in list(prec_metrics.results_dict.values())[:4]] 
         metrics.append(M_params)
 
+        del val_model
         return metrics # [precision, recall, map50, map95, M_paramns]
 
     def get_n_model_params(self) -> float:
