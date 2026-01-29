@@ -1,18 +1,17 @@
-import torch.nn as nn
-import torch_pruning as tp
+import gc
+import os
+import copy
 import torch
 import numpy as np
-import gc
-import sys
-import os
-from thop import profile
-#from fvcore.nn import FlopCountAnalysis
-import torchvision.transforms as T
-import copy
-from typing import List
+import torch.nn as nn
+import torch_pruning as tp
+from typing import List, Optional
+# from fvcore.nn import FlopCountAnalysis
 
 from ultralytics.nn.modules import Detect
+from ultralytics.utils.loss import v8DetectionLoss 
 from src.model.tp_utils import replace_c2f_with_c2f_v2
+from ultralytics.models.yolo.detect import DetectionTrainer
 
 
 class YoloHandler:
@@ -28,8 +27,7 @@ class YoloHandler:
         self._detmodel = None 
 
         self.reset_model()
-                
-    
+
     def _load_pretrained(self) -> nn.Module:
         from ultralytics import YOLOv10, YOLO
 
@@ -48,12 +46,12 @@ class YoloHandler:
                 model = YOLOv10.from_pretrained('jameslahm/yolov10x')
 
         elif self._model_conf.pretrained_type == "yolov8":
-            
+
             assert self._model_conf.model_path is not None, "Model path cannot be None"
             model = YOLO(self._model_conf.model_path) 
 
         elif self._model_conf.pretrained_type == "yolov5":
-                model = YOLO('yolov5n.pt') 
+            model = YOLO('yolov5n.pt') 
 
         else:
             raise ValueError(f"Model type '{type}' is not supported.")
@@ -74,7 +72,6 @@ class YoloHandler:
 
         self.determine_prunable_layers()
 
-    
     def determine_prunable_layers(self) -> None: 
 
         flattened_layers = [(name, module) for name, module in self._detmodel.named_modules() if isinstance(module, nn.Conv2d)]    
@@ -83,64 +80,209 @@ class YoloHandler:
         for m in self._detmodel.modules():
             if isinstance(m, (Detect,)):
                 ignored_modules.append(m)
-            
+
         ignored_layers = [layer for module in ignored_modules for layer in module.modules() if isinstance(layer, nn.Conv2d)]
 
         self._prunable_layers = [layer for i, layer in enumerate(flattened_layers) if layer[1] not in ignored_layers]
-
-
 
     def train(self):
         pass
 
     def evaluate(self) -> list:
 
-        prec_metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size, plots=None)
-        
+        val_model = copy.deepcopy(self._model)
+
+        prec_metrics = val_model.val(data=self._model_conf.data, batch=self._model_conf.batch_size, plots=None)
+
         M_params = self.get_n_model_params()
 
         metrics = [float(np.around(m,4)) for m in list(prec_metrics.results_dict.values())[:4]] 
         metrics.append(M_params)
 
+        del val_model
         return metrics # [precision, recall, map50, map95, M_paramns]
-    
+
     def get_n_model_params(self) -> float:
         """Used when evaluation is not needed (map is already 0).
         """
         M_params = sum(p.numel() for p in self._model.parameters()) / 1e6
         M_params = float(np.around(M_params, 2))
-        
+
         return M_params
-    
+
     def prune(self, all_indices, layer_i):
 
         self._detmodel.train()
 
         device = next(self._model.parameters()).device.type
         DG = tp.DependencyGraph().build_dependency(self._detmodel, self._example_input.to(device))
-
-        def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
-                    pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
-                    pruning_group.prune()
-
+            
         indices = all_indices[layer_i]     
-        layer = self._prunable_layers[layer_i][1] #0:name, 1:layer
+        layer_name = self._prunable_layers[layer_i][0]  
+        layer = dict(self._detmodel.named_modules())[layer_name]
 
         if indices is not None: # and len(indices):   
-            prune_conv_layer(layer, indices)
-              
-        del layer
-        gc.collect()
+            pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
+            with torch.no_grad():
+                pruning_group.prune()
 
-        for name, param in self._detmodel.named_parameters():
-            param.requires_grad = True 
-        
+        self._model.model = self._detmodel  
+    
+    def fine_tune(
+        self,
+        data_yaml: str = None,
+        lr: float = 1e-4,
+        epochs: int = 100,
+        imgsz: int = 640,
+        batch: int = 8,
+        **kwargs
+    ) -> None:
+        """
+        Fine-tune the *current* model (pruned or not) using Ultralytics' .train().
+        After training, updates self._model with the trained weights.
+        """
+        pruned_model = self._detmodel 
+
+        args = dict(
+            model="",            # unused because we override get_model
+            data=data_yaml,
+            epochs=epochs,
+            batch=batch,
+            imgsz=imgsz,
+            lr0=lr,
+            device=self._device,
+            project="runs/pruned",
+            name="yolo_pruned_finetune",
+        )
+
+        trainer = PrunedDetectionTrainer(pruned_model=pruned_model, overrides=args)
+        # Make sure the trainer knows nc, names, args
+        trainer.model.nc = trainer.data["nc"]
+        trainer.model.names = trainer.data["names"]
+        trainer.model.args = trainer.args
+
+        if self._model_conf.pretrained_type == "yolov8":
+            trainer.model.criterion = v8DetectionLoss(trainer.model)
+        else:
+            raise NotImplementedError(
+                f"Fine-tuning is not supported for model type {self._model_conf.pretrained_type}. Criterion is missing."
+            )
+        print(type(trainer.model))  # should be DetectionModel (or similar nn.Module)
+        print(hasattr(trainer.model, "criterion"))  # should be True
+        print(trainer.model.criterion)  
+        print("trainer model params:", sum(p.numel() for p in trainer.model.parameters()))
+
+        results = trainer.train()
+        self._model.model = trainer.model
+
+    
+    def save_pruned_model(self, path: Optional[str] = None) -> str:
+        """
+        Save the current pruned (and possibly fine-tuned) detection model.
+        """
+        if path is None:
+            path = os.path.join("runs", "pruned", "pruned_model.pt")
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+
+        ckpt = {
+            "detmodel": self._detmodel,        # full pruned DetectionModel
+            "nc": getattr(self._detmodel, "nc", None),
+            "names": getattr(self._detmodel, "names", None),
+            "pretrained_type": self._model_conf.pretrained_type,
+        }
+        torch.save(ckpt, path)
+        return path
+
+    def load_pruned_model(self, path: str) -> None:
+        """
+        Load a previously saved pruned detection model from disk
+        and attach it to self._model / self._detmodel.
+        """
+        ckpt = torch.load(path, map_location=self._device)
+
+        detmodel = ckpt["detmodel"].to(self._device).train()
+        # Restore nc/names if present
+        if "nc" in ckpt and ckpt["nc"] is not None:
+            detmodel.nc = ckpt["nc"]
+        if "names" in ckpt and ckpt["names"] is not None:
+            detmodel.names = ckpt["names"]
+
+        self._detmodel = detmodel
+
+        # Rebuild wrapper model around this pruned detmodel
+        # (mirrors what reset_model() does, but without re-pruning)
+        self._model = copy.deepcopy(self._init_model)
         self._model.model = copy.deepcopy(self._detmodel)
-        
+
+        # Recompute any indices / masks that depend on the current model
+        self.determine_prunable_layers()
+
+
+    def prune_magnitude(self, importance: str, target_spars: float) -> None:
+
+        self._detmodel.train()
+        device = next(self._detmodel.parameters()).device
+        example_inputs = self._example_input.to(device)
+
+        # ---- Build ignored layers (DO NOT PRUNE DETECT HEAD) ----
+        ignored_layers = []
+
+        detect_modules = []
+        for m in self._detmodel.modules():
+            if isinstance(m, Detect):
+                detect_modules.append(m)
+
+        # 1) Ignore Detect module + all Conv2d inside it
+        for det in detect_modules:
+            ignored_layers.append(det)
+            for sub in det.modules():
+                if isinstance(sub, nn.Conv2d):
+                    ignored_layers.append(sub)
+
+        # ---- Magnitude importance ----
+        if importance == "magnitude":
+            imp = tp.importance.MagnitudeImportance()
+        elif importance == "hessian":
+            imp = tp.importance.HessianImportance()
+        elif importance == "lamp":
+            imp = tp.importance.LAMPImportance()
+        elif importance == "random":
+            imp = tp.importance.RandomImportance()
+        elif importance == "bn_scale":
+            imp = tp.importance.BNScaleImportance()
+        else:
+            raise ValueError(f"Importance '{importance}' not recognized for magnitude pruning.")
+
+        # Prune in eval mode to avoid any weird training-time branches
+        was_training = self._detmodel.training
+        self._detmodel.eval()
+
+        pruner = tp.pruner.MagnitudePruner(
+            self._detmodel,
+            example_inputs=example_inputs,
+            importance=imp,
+            pruning_ratio=float(target_spars),   
+            global_pruning=True,
+            ignored_layers=ignored_layers,
+        )
+
+        pruner.step()
+
+        # restore train/eval state
+        if was_training:
+            self._detmodel.train()
+
+        # make sure everything is trainable
+        for _, param in self._detmodel.named_parameters():
+            param.requires_grad = True
+
+        # sync back
+        self._model.model = self._detmodel
+
 
     def save_metrics():
         pass
-
 
     @property
     def model(self) -> nn.Module:
@@ -149,11 +291,11 @@ class YoloHandler:
     @property
     def prunable_layers(self) -> list:
         return self._prunable_layers
-    
+
     @property
     def n_prunable_layers(self) -> int:
         return len(self._prunable_layers)
-    
+
     @property
     def device(self) -> str:
         return self._device
@@ -161,11 +303,11 @@ class YoloHandler:
     @property
     def prunable_in_channels(self) -> List[int]:
         return [layer[1].in_channels for layer in self._prunable_layers]
-    
+
     @property
     def prunable_out_channels(self) -> List[int]:
         return [layer[1].out_channels for layer in self._prunable_layers]
-    
+
     @property
     def prunable_kernel_sizes(self) -> List[int]:
         return [layer[1].kernel_size[0] for layer in self._prunable_layers]
@@ -180,10 +322,15 @@ class YoloHandler:
 
 
 
+class PrunedDetectionTrainer(DetectionTrainer):
+    def __init__(self, pruned_model, overrides=None, _callbacks=None):
+        super().__init__(overrides=overrides, _callbacks=_callbacks)
 
+        # override the model with (pruned) DetectionModel
+        self.model = pruned_model.to(self.device)
 
+        self.model.nc = self.data["nc"]
+        self.model.names = self.data["names"]
+        self.model.args = self.args
 
-    
-
-
-
+        self.set_model_attributes()
