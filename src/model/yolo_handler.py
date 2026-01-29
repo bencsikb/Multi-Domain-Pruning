@@ -90,7 +90,9 @@ class YoloHandler:
 
     def evaluate(self) -> list:
 
-        prec_metrics = self._model.val(data=self._model_conf.data, batch=self._model_conf.batch_size, plots=None)
+        val_model = copy.deepcopy(self._model)
+
+        prec_metrics = val_model.val(data=self._model_conf.data, batch=self._model_conf.batch_size, plots=None)
 
         M_params = self.get_n_model_params()
 
@@ -113,24 +115,17 @@ class YoloHandler:
 
         device = next(self._model.parameters()).device.type
         DG = tp.DependencyGraph().build_dependency(self._detmodel, self._example_input.to(device))
-
-        def prune_conv_layer(layer: nn.Conv2d, indices: list) -> None:
-            pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
-            pruning_group.prune()
-
+            
         indices = all_indices[layer_i]     
-        layer = self._prunable_layers[layer_i][1] #0:name, 1:layer
+        layer_name = self._prunable_layers[layer_i][0]  
+        layer = dict(self._detmodel.named_modules())[layer_name]
 
         if indices is not None: # and len(indices):   
-            prune_conv_layer(layer, indices)
+            pruning_group = DG.get_pruning_group(layer, tp.prune_conv_out_channels, idxs=indices)
+            with torch.no_grad():
+                pruning_group.prune()
 
-        del layer
-        gc.collect()
-
-        for name, param in self._detmodel.named_parameters():
-            param.requires_grad = True 
-
-        self._model.model = copy.deepcopy(self._detmodel)
+        self._model.model = self._detmodel  
     
     def fine_tune(
         self,
@@ -176,13 +171,8 @@ class YoloHandler:
         print(trainer.model.criterion)  
         print("trainer model params:", sum(p.numel() for p in trainer.model.parameters()))
 
-        # Make sure the trainer knows nc, names, args
-        trainer.model.nc = trainer.data["nc"]
-        trainer.model.names = trainer.data["names"]
-        trainer.model.args = trainer.args
-
         results = trainer.train()
-        self._model.model = copy.deepcopy(trainer.model)
+        self._model.model = trainer.model
 
     
     def save_pruned_model(self, path: Optional[str] = None) -> str:
@@ -249,12 +239,6 @@ class YoloHandler:
                 if isinstance(sub, nn.Conv2d):
                     ignored_layers.append(sub)
 
-            # 2) Extra safety: ignore all convs that output det.no channels (e.g. 73)
-            # det.no = number of outputs per anchor/location (YOLO-specific)
-            for m in self._detmodel.modules():
-                if isinstance(m, nn.Conv2d) and m.out_channels == det.no:
-                    ignored_layers.append(m)
-
         # ---- Magnitude importance ----
         if importance == "magnitude":
             imp = tp.importance.MagnitudeImportance()
@@ -293,7 +277,7 @@ class YoloHandler:
             param.requires_grad = True
 
         # sync back
-        self._model.model = copy.deepcopy(self._detmodel)
+        self._model.model = self._detmodel
 
 
     def save_metrics():
