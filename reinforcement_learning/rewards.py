@@ -97,6 +97,61 @@ class PartialTargetReward:
         term1 = torch.clamp((dmap - Td) / (1 - Td + eps), min=0)
         term2 = torch.clamp(1 - spars / Ts, min=0)
         return -self.beta * (self.dmap_coeff * term1 + self.spars_coeff * term2)
+
+
+
+class MagicReward:
+    def __init__(self, prunable_layers, T_spars_total, Tdmap, beta,
+                 spars_coeff, dmap_coeff,
+                 progress_coeff=1.0, slack_coeff=0.2,
+                 tau=0.02, gamma=1.5, device=None):
+        self.Tdmap = Tdmap
+        self.beta = beta
+        self.dmap_coeff = dmap_coeff
+        self.spars_coeff = spars_coeff
+        self.progress_coeff = progress_coeff
+        self.slack_coeff = slack_coeff
+        self.tau = tau
+
+        param_counts = [sum(p.numel() for p in l.parameters()) for _, l in prunable_layers]
+        total = sum(param_counts)
+        cum_ratio = torch.tensor(
+            [sum(param_counts[:i+1]) / total for i in range(len(param_counts))],
+            dtype=torch.float32, device=device
+        )
+        # push target later
+        self.layer_Tspars = T_spars_total * (cum_ratio ** gamma)
+
+        self.prev_spars = None
+
+    def reset(self):
+        self.prev_spars = None
+
+    def get_reward(self, layer_idx, spars, dmap, eps=1e-12):
+        Ts = torch.clamp(self.layer_Tspars[layer_idx], min=eps).to(dmap.device)
+        Td = self.Tdmap.to(dmap.device)
+
+        # smooth "constraint violation" penalties
+        dmap_violation = F.softplus((dmap - Td) / self.tau)      # ~0 if dmap<Td
+        spars_violation = F.softplus((Ts - spars) / self.tau)    # ~0 if spars>Ts
+
+        penalty = self.beta * (self.dmap_coeff * dmap_violation +
+                               self.spars_coeff * spars_violation)
+
+        # progress reward: encourage pruning (especially later)
+        if self.prev_spars is None:
+            delta_spars = torch.zeros_like(spars)
+        else:
+            delta_spars = spars - self.prev_spars
+
+        self.prev_spars = spars.detach()
+
+        # reward being under dmap target a bit (gives permission to prune later)
+        slack = torch.clamp(Td - dmap, min=0.0)
+
+        reward = self.progress_coeff * delta_spars + self.slack_coeff * slack - penalty
+        return reward
+
     
 
 def sigmoid_gate(dmap, Td, tau=0.02):

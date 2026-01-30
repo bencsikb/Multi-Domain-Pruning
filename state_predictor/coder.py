@@ -22,6 +22,20 @@ class Coder:
 
         self.n_prunable_layers = state_example.shape[0]
 
+        # Define mappings
+        self._col_range_map = {
+            'alpha': self._alpha_range,
+            'is_pruned': self._is_pruned_range,
+            'in_ch': self._channel_range,
+            'out_ch': self._channel_range,
+            'kernel': self._kernel_range,
+            'stride': self._stride_range,
+            'pad': self._pad_range,
+            'n_pruned_ch': self._channel_range,
+            'prev_n_params': self._spars_range,
+            'prev_map50': self._dmap_range,
+        }
+
     def _set_param_ranges(self, state: pd.DataFrame, label: pd.DataFrame):
 
         min_channels = state[['in_ch', 'out_ch']].min().min()
@@ -90,21 +104,7 @@ class Coder:
         # We'll track active features ourselves
         encoded_state = []
 
-        # Define mappings
-        col_range_map = {
-            'alpha': self._alpha_range,
-            'is_pruned': self._is_pruned_range,
-            'in_ch': self._channel_range,
-            'out_ch': self._channel_range,
-            'kernel': self._kernel_range,
-            'stride': self._stride_range,
-            'pad': self._pad_range,
-            'n_pruned_ch': self._channel_range,
-            'prev_n_params': self._spars_range,
-            'prev_map50': self._dmap_range,
-        }
-
-        for col in col_range_map:
+        for col in self._col_range_map:
             if col not in state.columns:
                 continue
 
@@ -117,11 +117,14 @@ class Coder:
             else:
                 values = state[col]
 
-            values = normalize(values.values, col_range_map[col])
+            values = normalize(values.values, self._col_range_map[col])
             encoded_state.append(values.astype(np.float32))
 
         encoded_state = np.stack(encoded_state, axis=0)  
         return torch.tensor(encoded_state.flatten(), dtype=torch.float32)
+
+    def normalize_state_value(self, value: float, name: str) -> float:
+        return normalize(value, self._col_range_map[name])
 
 
     def encode_label(self, label: pd.DataFrame) -> torch.Tensor:

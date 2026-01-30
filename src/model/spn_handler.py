@@ -240,7 +240,7 @@ class SPNHandler:
     def predict(self, data_gt: torch.Tensor) -> Tuple:
         """
         Args:
-            data_gt: shape (T, 3) — a single input sequence with [spars, dmap, alpha]
+            data_gt: shape (T, 3) — a single input sequence with [alpha, spars, dmap]
         
         Returns:
             pred_spars, pred_dmap: denormalized prediction for the next step (spars_T, dmap_T)

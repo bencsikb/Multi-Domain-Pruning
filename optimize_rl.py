@@ -10,21 +10,21 @@ from utils.common_utils import generate_run_name
 
 def objective(trial, config, obj_metric):
     # Suggest hyperparameters
-    episodes = trial.suggest_int('episodes', 500, 1000, step=100)
-    batch_size = trial.suggest_categorical('batch_size', [1024, 2048])
+    episodes = trial.suggest_int('episodes', 200, 400, step=100)
+    batch_size = trial.suggest_categorical('batch_size', [1024])
 
-    optimizer_type = trial.suggest_categorical('optimizer', ['adam']) #, 'lamb'])
+    optimizer_type = trial.suggest_categorical('optimizer', ['adam']) #,, 'adamw 'lamb'])
     start_lr = trial.suggest_categorical(
-        'start_lr', [c * 10**-e for e in range(2,5) for c in range(1, 10)]
+        'start_lr', [c * 10**-e for e in range(2,4) for c in range(1, 10)]
     )
     weight_decay = trial.suggest_categorical(
-        'weight_decay', [c * 10**-e for e in range(2, 6) for c in range(1, 10)]
+        'weight_decay', [c * 10**-e for e in range(4, 6) for c in range(1, 10)]
     )
     entropy_coef = trial.suggest_categorical(
-        'entropy_coef', [c * 10**-e for e in range(3, 6) for c in range(1, 10)]
+        'entropy_coef', [c * 10**-e for e in range(4, 6) for c in range(1, 10)]
     )
     entropy_factor = trial.suggest_categorical('entropy_factor', [ e for e in range(10, 150, 10)])
-    spars_coeff = trial.suggest_categorical('spars_coeff', [0.1, 0.2, 0.3, 0.4, 0.5])
+    spars_coeff = trial.suggest_categorical('spars_coeff', [0.1, 0.2, 0.3])
     dmap_coeff = 1 - spars_coeff
 
 

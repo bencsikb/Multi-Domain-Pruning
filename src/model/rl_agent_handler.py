@@ -18,7 +18,7 @@ from pruning.channel_selection.channel_selector import ChannelSelector
 from state_predictor.coder import Coder
 from reinforcement_learning.model import actorNet, criticNet
 from reinforcement_learning.losses import ActorLoss, CriticLoss, ActorPPOLoss
-from reinforcement_learning.rewards import reward_function_proposed, reward_function_purl, reward_function_amc, PartialTargetReward, SigmoidGateReward
+from reinforcement_learning.rewards import reward_function_proposed, reward_function_purl, reward_function_amc, PartialTargetReward, SigmoidGateReward, MagicReward
 
 
 class RLAgentHandler():
@@ -46,7 +46,8 @@ class RLAgentHandler():
         self._n_prunable_layers = self._get_n_prunable_layers() 
         set_seed(self._conf.train.seed)
 
-        self._state_features = self._spn_conf.model.state_features
+        self._spn_state_features = self._spn_conf.model.state_features
+        self._agent_state_features = self._conf.model.state_features
 
         self._results_df = pd.DataFrame([], columns = ["reward", "spars", "dmap", "alpha_seq"])
         self._best_results_df = pd.DataFrame([], columns = ["reward", "spars", "dmap", "alpha_seq"])
@@ -138,7 +139,8 @@ class RLAgentHandler():
             'lr_scheduler': self._lr_scheduler.state_dict(),
             'entropy_values': self._entropy_values
         }
-        torch.save(checkpoint, os.path.join(self._log_dir_path, f"checkpoint_{self._episode}.pt"))
+        # torch.save(checkpoint, os.path.join(self._log_dir_path, f"checkpoint_{self._episode}.pt"))
+        torch.save(checkpoint, os.path.join(self._log_dir_path, f"checkpoint_last.pt"))
         if int(self._best_results_df["reward"].idxmax()) == self._episode:
             torch.save(checkpoint, os.path.join(self._log_dir_path, "checkpoint_best.pt"))
     
@@ -165,9 +167,9 @@ class RLAgentHandler():
     
     def create(self):
 
-        state_feature_dim = self._n_prunable_layers * (len(self._state_features) - 1) # alpha is not needed -> -1
+        agent_state_feature_dim = self._n_prunable_layers * len(self._agent_state_features)
 
-        self._actor_model = actorNet(state_feature_dim, len(self._possible_alphas)).to(self._device)
+        self._actor_model = actorNet(agent_state_feature_dim, len(self._possible_alphas)).to(self._device)
         self._actor_optimizer = get_optimizer(type = self._conf.model.actor_optimizer,
                                               model = self._actor_model,
                                               lr = self._conf.model.actor_init_lr,
@@ -176,7 +178,7 @@ class RLAgentHandler():
         
         self._actor_loss = ActorPPOLoss() if self._conf.model.is_ppo else ActorLoss()
 
-        self._critic_model = criticNet(state_feature_dim, 1).to(self._device)
+        self._critic_model = criticNet(agent_state_feature_dim, 1).to(self._device)
         self._critic_optimizer = get_optimizer(type = self._conf.model.critic_optimizer,
                                               model = self._critic_model,
                                               lr = self._conf.model.critic_init_lr,
@@ -203,6 +205,19 @@ class RLAgentHandler():
                                             self._conf.reward.spars_coeff,
                                             self._conf.reward.dmap_coeff,
                                             self._device)
+        elif self._conf.reward.type == 'magic_reward':
+            self.reward_class = MagicReward( 
+                                self._yolo_handler.prunable_layers,
+                                self._conf.reward.target_spars,
+                                self._conf.reward.target_dmap,
+                                self._conf.reward.beta,
+                                self._conf.reward.spars_coeff,
+                                self._conf.reward.dmap_coeff,
+                                progress_coeff=self._conf.reward.get("progress_coeff", 1.0),
+                                slack_coeff=self._conf.reward.get("slack_coeff", 0.2),
+                                tau=self._conf.reward.get("tau", 0.02),
+                                gamma=self._conf.reward.get("gamma", 1.5),
+                                device=self._device)
             
         elif self._conf.reward.type == 'sigmoid_gate':
             self.reward_class = SigmoidGateReward( 
@@ -226,7 +241,7 @@ class RLAgentHandler():
             
             # === 2. Initialize Environment ===
 
-            action_batch, state_batch, sparsb_prev, dmapb_prev = self._init_environment()
+            action_batch, spn_state_batch, agent_state_batch = self._init_environment()
             # self._model_pruner.reset_model_and_state()
 
             actions = []
@@ -242,9 +257,9 @@ class RLAgentHandler():
             for layer_i, layer in enumerate(self._yolo_handler.prunable_layers):
                 
                 # --- 3c. Actorm, Critic Forward ---  
-                state_batch_flattened = state_batch.view([self._conf.train.batch_size, -1])
-                probs, action_dist, log_softmax = self._actor_model(state_batch_flattened)
-                q_value = self._critic_model(state_batch_flattened)
+                agent_state_batch_flattened = agent_state_batch.view([self._conf.train.batch_size, -1])
+                probs, action_dist, log_softmax = self._actor_model(agent_state_batch_flattened)
+                q_value = self._critic_model(agent_state_batch_flattened)
 
                 # --- 3d. Sample Action & Compute Info ---
                 skipmod = getattr(self._conf.train, "skipmod", -1)
@@ -273,15 +288,15 @@ class RLAgentHandler():
 
                 # --- 3g. Predict Error & Sparsity --     
                 #    spn_input_data shape = [batch_size, n_features * n_prunable_layers]          
-                spn_input_data = torch.cat((action_batch, state_batch), dim=1).view([self._conf.train.batch_size, -1]) # .type(torch.float32).to(device)
-                spn_input_data = spn_input_data.reshape([spn_input_data.shape[0], len(self._state_features), -1]).T.permute(2,0,1)
+                spn_input_data = torch.cat((action_batch, spn_state_batch), dim=1).view([self._conf.train.batch_size, -1]) # .type(torch.float32).to(device)
+                spn_input_data = spn_input_data.reshape([spn_input_data.shape[0], len(self._spn_state_features), -1]).T.permute(2,0,1)
 
                 prediction = self._spn_handler.predict(spn_input_data[:, :layer_i+1, :])
                 sparsb, dmapb = prediction[0], prediction[1]
 
                 # Update state batc
                 if layer_i < self._yolo_handler.n_prunable_layers-1:
-                    state_batch = self._update_state_batch(layer_i, state_batch, sparsb, dmapb) 
+                    spn_state_batch, agent_state_batch = self._update_state_batch(layer_i, spn_state_batch, agent_state_batch, sparsb, dmapb) 
 
                 # Decode predictions
                 decoded_prediction = self._coder.decode_label((sparsb, dmapb)) # Tuple([batch_size], [batch_size])
@@ -295,7 +310,7 @@ class RLAgentHandler():
                 log_probs.append(log_prob)  
                 entropies.append(entropy)  
                 actions.append(action_batch.clone().detach())
-                states.append(state_batch.clone().detach())                
+                states.append(spn_state_batch.clone().detach())                
                 rewards.append(reward) 
                 values.append(q_value)  
                 policies.append(policy) 
@@ -379,11 +394,10 @@ class RLAgentHandler():
     def _init_environment(self):
 
         action_batch = torch.full([self._conf.train.batch_size, 1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
-        state_batch = torch.full([self._conf.train.batch_size, len(self._state_features)-1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
-        sparsb_prev = torch.full([self._conf.train.batch_size], -1.0).to(self._device)
-        dmapb_prev = torch.full([self._conf.train.batch_size], -1.0).to(self._device)
+        spn_state_batch = torch.full([self._conf.train.batch_size, len(self._spn_state_features)-1, self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
+        agent_state_batch = torch.full([self._conf.train.batch_size, len(self._agent_state_features), self._yolo_handler.n_prunable_layers], -1.0).to(self._device)
 
-        return action_batch, state_batch, sparsb_prev, dmapb_prev
+        return action_batch, spn_state_batch, agent_state_batch
     
     def _double_check_dmap(self, dmap):
         """
@@ -405,16 +419,52 @@ class RLAgentHandler():
         return return_dmap
 
 
-    def _update_state_batch(self, layer_i, state_batch, sparsb_prev, dmapb_prev):
+    def _update_state_batch(self, layer_i, spn_state_batch, agent_state_batch, sparsb_prev, dmapb_prev):
 
         # Only spars and dmap prev.
 
+        # SPN
         with torch.no_grad():
-            state_batch = state_batch.clone()
-            state_batch[:, 0, layer_i+1] = sparsb_prev
-            state_batch[:, 1, layer_i+1] = dmapb_prev
+            spn_state_batch = spn_state_batch.clone()
+            spn_state_batch[:, 0, layer_i+1] = sparsb_prev
+            spn_state_batch[:, 1, layer_i+1] = dmapb_prev
+        
+        # Agent
+        with torch.no_grad():
+            agent_state_batch = agent_state_batch.clone()
+            agent_state_batch[:, 0, layer_i+1] = sparsb_prev
+            agent_state_batch[:, 1, layer_i+1] = dmapb_prev
+            fc = 2
+            if 'in_ch' in self._agent_state_features:
+                agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(
+                    self._yolo_handler.prunable_in_channels[layer_i+1], 'in_ch')
+                fc += 1
+            if 'out_ch' in self._agent_state_features:
+                agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(
+                    self._yolo_handler.prunable_out_channels[layer_i+1], 'out_ch')
+                fc += 1
+            if 'kernel' in self._agent_state_features:
+                agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(
+                    self._yolo_handler.prunable_kernel_sizes[layer_i+1], 'kernel')
+                fc += 1
+            if 'stride' in self._agent_state_features:
+                agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(
+                    self._yolo_handler.prunable_strides[layer_i+1], 'stride')   
+                fc += 1
+            if 'pad' in self._agent_state_features:
+                agent_state_batch[:, fc, layer_i] =  self._coder.normalize_state_value(
+                    self._yolo_handler.prunable_paddings[layer_i+1], 'pad')
+                fc += 1        
+            
+            if 'is_pruned' in self._agent_state_features:
+                if layer_i  >= 1:
+                    agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(1.0, 'is_pruned')
+                fc += 1
+            if 'n_pruned_ch' in self._agent_state_features:
+                pass #TODO
 
-        return state_batch
+            
+        return spn_state_batch, agent_state_batch
     
 
     def _update_results(self, rewards, states, actions):
