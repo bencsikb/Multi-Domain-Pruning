@@ -436,29 +436,28 @@ class RLAgentHandler():
             agent_state_batch[:, 1, layer_i+1] = dmapb_prev
             fc = 2
             if 'in_ch' in self._agent_state_features:
-                agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(
+                agent_state_batch[:, fc, layer_i+1] = self._coder.normalize_state_value(
                     self._yolo_handler.prunable_in_channels[layer_i+1], 'in_ch')
                 fc += 1
             if 'out_ch' in self._agent_state_features:
-                agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(
+                agent_state_batch[:, fc, layer_i+1] = self._coder.normalize_state_value(
                     self._yolo_handler.prunable_out_channels[layer_i+1], 'out_ch')
                 fc += 1
             if 'kernel' in self._agent_state_features:
-                agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(
+                agent_state_batch[:, fc, layer_i+1] = self._coder.normalize_state_value(
                     self._yolo_handler.prunable_kernel_sizes[layer_i+1], 'kernel')
                 fc += 1
             if 'stride' in self._agent_state_features:
-                agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(
+                agent_state_batch[:, fc, layer_i+1] = self._coder.normalize_state_value(
                     self._yolo_handler.prunable_strides[layer_i+1], 'stride')   
                 fc += 1
             if 'pad' in self._agent_state_features:
-                agent_state_batch[:, fc, layer_i] =  self._coder.normalize_state_value(
+                agent_state_batch[:, fc, layer_i+1] =  self._coder.normalize_state_value(
                     self._yolo_handler.prunable_paddings[layer_i+1], 'pad')
                 fc += 1        
             
             if 'is_pruned' in self._agent_state_features:
-                if layer_i  >= 1:
-                    agent_state_batch[:, fc, layer_i] = self._coder.normalize_state_value(1.0, 'is_pruned')
+                agent_state_batch[:, fc, layer_i+1] = self._coder.normalize_state_value(1.0, 'is_pruned')
                 fc += 1
             if 'n_pruned_ch' in self._agent_state_features:
                 pass #TODO
