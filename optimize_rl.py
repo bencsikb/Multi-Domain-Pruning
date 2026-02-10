@@ -10,21 +10,27 @@ from utils.common_utils import generate_run_name
 
 def objective(trial, config, obj_metric):
     # Suggest hyperparameters
-    episodes = trial.suggest_int('episodes', 200, 400, step=100)
+    episodes = trial.suggest_int('episodes', 200, 300, step=100)
     batch_size = trial.suggest_categorical('batch_size', [1024])
 
     optimizer_type = trial.suggest_categorical('optimizer', ['adam']) #,, 'adamw 'lamb'])
-    start_lr = trial.suggest_categorical(
-        'start_lr', [c * 10**-e for e in range(2,4) for c in range(1, 10)]
+    actor_lr = trial.suggest_categorical(
+        'actor_lr', [c * 10**-e for e in range(3,4) for c in range(1, 10)]
     )
-    weight_decay = trial.suggest_categorical(
-        'weight_decay', [c * 10**-e for e in range(4, 6) for c in range(1, 10)]
-    )
+    # critic_lr = trial.suggest_categorical(
+    #     'critic_lr', [c * 10**-e for e in range(3,4) for c in range(1, 10)]
+    # )
+    # if actor_lr > critic_lr:
+    #     critic_lr = actor_lr
+    critic_lr = actor_lr * 5
+    weight_decay = 0.0
+
     entropy_coef = trial.suggest_categorical(
-        'entropy_coef', [c * 10**-e for e in range(4, 6) for c in range(1, 10)]
-    )
-    entropy_factor = trial.suggest_categorical('entropy_factor', [ e for e in range(10, 150, 10)])
-    spars_coeff = trial.suggest_categorical('spars_coeff', [0.1, 0.2, 0.3])
+            'entropy_coef', [c * 10**-e for e in range(3, 4) for c in range(1, 10)]
+    )    
+    entropy_factor = trial.suggest_categorical('entropy_factor', [ e for e in range(10, 100, 10)])
+
+    spars_coeff = trial.suggest_categorical('spars_coeff', [0.2, 0.5])
     dmap_coeff = 1 - spars_coeff
 
 
@@ -34,8 +40,8 @@ def objective(trial, config, obj_metric):
     conf.train.batch_size = batch_size
     conf.model.actor_optimizer = optimizer_type
     conf.model.critic_optimizer = optimizer_type
-    conf.model.actor_init_lr = start_lr
-    conf.model.critic_init_lr = start_lr
+    conf.model.actor_init_lr = actor_lr
+    conf.model.critic_init_lr = critic_lr
     conf.model.actor_weight_decay = weight_decay
     conf.model.critic_weight_decay = weight_decay
     conf.model.actor_entropy_coef = entropy_coef
@@ -71,7 +77,8 @@ def objective(trial, config, obj_metric):
         'episodes': episodes,
         'batch_size': batch_size, 
         'optimizer': optimizer_type, 
-        'start_lr': start_lr, 
+        'actor_lr': actor_lr, 
+        'critic_lr': critic_lr,
         'weight_decay': weight_decay, 
         'entropy_coef': entropy_coef,
         'entropy_factor': entropy_factor,
