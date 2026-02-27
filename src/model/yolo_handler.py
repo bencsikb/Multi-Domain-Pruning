@@ -95,12 +95,16 @@ class YoloHandler:
         prec_metrics = val_model.val(data=self._model_conf.data, batch=self._model_conf.batch_size, plots=None)
 
         M_params = self.get_n_model_params()
+        summary = val_model.fuse()
+        summary = val_model.info()
+        gflops = summary[3]
 
         metrics = [float(np.around(m,4)) for m in list(prec_metrics.results_dict.values())[:4]] 
         metrics.append(M_params)
+        metrics.append(gflops)
 
         del val_model
-        return metrics # [precision, recall, map50, map95, M_paramns]
+        return metrics # [precision, recall, map50, map95, M_params, gflops]
 
     def get_n_model_params(self) -> float:
         """Used when evaluation is not needed (map is already 0).
