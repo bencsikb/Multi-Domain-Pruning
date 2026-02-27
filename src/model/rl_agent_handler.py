@@ -146,7 +146,7 @@ class RLAgentHandler():
     
 
     def _load_checkpoint(self, path):
-        checkpoint_path = path #os.path.join(path, "checkpoint_best.pt")
+        checkpoint_path = path # os.path.join(path, "checkpoint_last.pt")
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
 
         self._actor_model.load_state_dict(checkpoint['actor_state_dict'])
@@ -178,7 +178,7 @@ class RLAgentHandler():
         
         self._actor_loss = ActorPPOLoss() if self._conf.model.is_ppo else ActorLoss()
 
-        self._critic_model = criticNet(agent_state_feature_dim, 1).to(self._device)
+        self._critic_model = criticNet(agent_state_feature_dim).to(self._device)
         self._critic_optimizer = get_optimizer(type = self._conf.model.critic_optimizer,
                                               model = self._critic_model,
                                               lr = self._conf.model.critic_init_lr,
@@ -258,25 +258,17 @@ class RLAgentHandler():
                 
                 # --- 3c. Actorm, Critic Forward ---  
                 agent_state_batch_flattened = agent_state_batch.view([self._conf.train.batch_size, -1])
-                probs, action_dist, log_softmax = self._actor_model(agent_state_batch_flattened)
-                q_value = self._critic_model(agent_state_batch_flattened)
+                action_dist, logits = self._actor_model(agent_state_batch_flattened)
+                q_value = self._critic_model(agent_state_batch_flattened).unsqueeze(-1)
 
                 # --- 3d. Sample Action & Compute Info ---
                 skipmod = getattr(self._conf.train, "skipmod", -1)
                 skip_flag = (skipmod > 0) and (layer_i % skipmod != 0)
                     
                 sampled_action = action_dist.sample()  # alpha index
-                # entropy = action_dist.entropy()
                 log_prob = action_dist.log_prob(sampled_action).unsqueeze(1)
-                policy = probs.gather(-1, sampled_action.unsqueeze(0))
-                entropy = - (probs * log_softmax).sum(1, keepdim=True)
-
-                policy_mask = torch.ones(self._conf.train.batch_size, 1, device=self._device)
-                if skip_flag:
-                    action = torch.zeros(self._conf.train.batch_size, dtype=int).to(self._device)
-                else:
-                    action = sampled_action
-                    policy_mask.zero_()
+                entropy = action_dist.entropy().unsqueeze(-1)
+                action = sampled_action
 
                 with torch.no_grad():
                     for i in range(self._conf.train.batch_size):
@@ -284,6 +276,7 @@ class RLAgentHandler():
                         action_batch[i, :, layer_i] = normalize(self._possible_alphas[action[i]], value_range=alpha_range)
                 
                 # --- 3e. Log Layer Info ---
+                probs = action_dist.probs
                 self._tb_logging_probs(layer_i, probs)
 
                 # --- 3g. Predict Error & Sparsity --     
@@ -306,15 +299,12 @@ class RLAgentHandler():
                 reward = self._get_reward(self._conf.reward.type, layer_i, decoded_sparsb, decoded_dmapb) # [batch_size, 1]
 
                 # --- 3i. Save Trajectory Step ---
-
                 log_probs.append(log_prob)  
                 entropies.append(entropy)  
                 actions.append(action_batch.clone().detach())
                 states.append(spn_state_batch.clone().detach())                
                 rewards.append(reward) 
                 values.append(q_value)  
-                policies.append(policy) 
-                policy_masks.append(policy_mask) 
                
             # === 6. Compute Returns ===
             #returns = self._get_discounted_reward(reward, values, gamma=0.99)
@@ -327,9 +317,9 @@ class RLAgentHandler():
             # === 8. Compute Losses ===
             critic_loss = self._critic_loss(rewards, values, 0.99)
             if self._conf.model.is_ppo:
-                actor_loss = self._actor_loss(rewards, values, policies, torch.stack(log_probs), log_probs_prev.to(self._device), entropies, policy_masks, ent_coef = self._entropy_values[self._episode], gamma=0.99)
+                actor_loss = self._actor_loss(rewards, values, policies, torch.stack(log_probs), log_probs_prev.to(self._device), entropies,  ent_coef = self._entropy_values[self._episode], gamma=0.99)
             else:
-                actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, policy_masks, ent_coef = self._entropy_values[self._episode], gamma=0.99)
+                actor_loss = self._actor_loss(rewards, values, policies, log_probs, entropies, ent_coef = self._entropy_values[self._episode], gamma=0.99)
 
             log_probs_prev = torch.stack(log_probs).detach()
 
@@ -341,8 +331,8 @@ class RLAgentHandler():
             torch.autograd.set_detect_anomaly(True)
             final_loss.backward(retain_graph=True)
 
-            #TODO reward_backprop = rewards.mean() 
-            #(-reward_backprop).backward()
+            # reward_backprop = torch.stack(rewards).mean() 
+            # (-reward_backprop).backward()
 
             self._actor_optimizer.step()
             self._critic_optimizer.step()
